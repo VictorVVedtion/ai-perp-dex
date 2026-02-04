@@ -6,6 +6,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::types::{AgentInfo, AgentStats, Market, Position, PositionStatus, PositionWithPnl, Side};
+use crate::funding::{FundingPayment, FundingSummary};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -75,11 +76,26 @@ impl Database {
                 closed_at TEXT
             );
             
+            -- Funding payments table
+            CREATE TABLE IF NOT EXISTS funding_payments (
+                id TEXT PRIMARY KEY,
+                position_id TEXT NOT NULL,
+                trader_agent TEXT NOT NULL,
+                mm_agent TEXT NOT NULL,
+                funding_rate REAL NOT NULL,
+                position_size REAL NOT NULL,
+                payment_amount REAL NOT NULL,
+                settled_at TEXT NOT NULL
+            );
+            
             -- Create indexes
             CREATE INDEX IF NOT EXISTS idx_positions_trader ON positions(trader_agent);
             CREATE INDEX IF NOT EXISTS idx_positions_mm ON positions(mm_agent);
             CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
             CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key);
+            CREATE INDEX IF NOT EXISTS idx_funding_trader ON funding_payments(trader_agent);
+            CREATE INDEX IF NOT EXISTS idx_funding_mm ON funding_payments(mm_agent);
+            CREATE INDEX IF NOT EXISTS idx_funding_settled ON funding_payments(settled_at);
         "#)?;
         
         Ok(())
@@ -295,6 +311,92 @@ impl Database {
             total_pnl,
             avg_pnl,
             total_volume,
+        })
+    }
+    
+    // ========== Funding Operations ==========
+    
+    pub fn save_funding_payment(&self, payment: &FundingPayment) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT INTO funding_payments 
+               (id, position_id, trader_agent, mm_agent, funding_rate, position_size, payment_amount, settled_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
+            params![
+                payment.id.to_string(),
+                payment.position_id.to_string(),
+                payment.trader_agent,
+                payment.mm_agent,
+                payment.funding_rate,
+                payment.position_size,
+                payment.payment_amount,
+                payment.settled_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+    
+    pub fn get_funding_payments(&self, agent_id: &str, limit: u32) -> rusqlite::Result<Vec<FundingPayment>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT id, position_id, trader_agent, mm_agent, funding_rate, position_size, payment_amount, settled_at
+               FROM funding_payments 
+               WHERE trader_agent = ?1 OR mm_agent = ?1
+               ORDER BY settled_at DESC
+               LIMIT ?2"#
+        )?;
+        
+        let mut payments = Vec::new();
+        let mut rows = stmt.query(params![agent_id, limit])?;
+        
+        while let Some(row) = rows.next()? {
+            payments.push(FundingPayment {
+                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                position_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                trader_agent: row.get(2)?,
+                mm_agent: row.get(3)?,
+                funding_rate: row.get(4)?,
+                position_size: row.get(5)?,
+                payment_amount: row.get(6)?,
+                settled_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+            });
+        }
+        
+        Ok(payments)
+    }
+    
+    pub fn get_funding_summary(&self, agent_id: &str) -> rusqlite::Result<FundingSummary> {
+        let conn = self.conn.lock().unwrap();
+        
+        // Total paid as trader
+        let total_paid: f64 = conn.query_row(
+            "SELECT COALESCE(SUM(payment_amount), 0) FROM funding_payments WHERE trader_agent = ?1",
+            params![agent_id],
+            |row| row.get(0),
+        )?;
+        
+        // Total received as MM
+        let total_received: f64 = conn.query_row(
+            "SELECT COALESCE(SUM(payment_amount), 0) FROM funding_payments WHERE mm_agent = ?1",
+            params![agent_id],
+            |row| row.get(0),
+        )?;
+        
+        // Payment count
+        let payment_count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM funding_payments WHERE trader_agent = ?1 OR mm_agent = ?1",
+            params![agent_id],
+            |row| row.get(0),
+        )?;
+        
+        Ok(FundingSummary {
+            agent_id: agent_id.to_string(),
+            total_paid,
+            total_received,
+            net: total_received - total_paid,
+            payment_count,
         })
     }
     

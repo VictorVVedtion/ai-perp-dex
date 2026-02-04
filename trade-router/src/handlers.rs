@@ -11,14 +11,22 @@ use crate::state::AppState;
 use crate::types::{
     AcceptQuote, AgentInfo, AgentPublicInfo, AgentStats, ApiResponse, ClosePosition, CreateQuote,
     CreateTradeRequest, Market, MarketInfo, PaginatedResponse, PaginationParams, Position,
-    PositionWithPnl, Quote, RegisterAgent, TradeRequest,
+    PositionWithPnl, Quote, RegisterAgent, RiskLimits, SetRiskLimits, TradeRequest,
 };
 
 /// POST /trade/request - 发起交易请求
 pub async fn create_trade_request(
     State(state): State<Arc<AppState>>,
     Json(input): Json<CreateTradeRequest>,
-) -> Result<Json<ApiResponse<TradeRequest>>, StatusCode> {
+) -> Result<Json<ApiResponse<TradeRequest>>, (StatusCode, Json<ApiResponse<()>>)> {
+    // 检查风险限额
+    if let Err(e) = state.check_risk_limits(&input.agent_id, input.size_usdc, input.leverage) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::err(format!("Risk limit exceeded: {}", e))),
+        ));
+    }
+    
     let request = TradeRequest {
         id: Uuid::new_v4(),
         agent_id: input.agent_id,
@@ -176,6 +184,27 @@ pub async fn get_markets(
             funding_rate_24h: 0.012,
             open_interest: 200000.0,
             volume_24h: 800000.0,
+        },
+        MarketInfo {
+            market: Market::DogePerp,
+            current_price: state.prices.get(&Market::DogePerp).map(|p| *p).unwrap_or(0.18),
+            funding_rate_24h: 0.015,
+            open_interest: 100000.0,
+            volume_24h: 400000.0,
+        },
+        MarketInfo {
+            market: Market::AvaxPerp,
+            current_price: state.prices.get(&Market::AvaxPerp).map(|p| *p).unwrap_or(22.0),
+            funding_rate_24h: 0.011,
+            open_interest: 150000.0,
+            volume_24h: 600000.0,
+        },
+        MarketInfo {
+            market: Market::LinkPerp,
+            current_price: state.prices.get(&Market::LinkPerp).map(|p| *p).unwrap_or(14.0),
+            funding_rate_24h: 0.009,
+            open_interest: 120000.0,
+            volume_24h: 500000.0,
         },
     ];
     Json(ApiResponse::ok(markets))

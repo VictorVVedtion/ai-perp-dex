@@ -1,4 +1,5 @@
 mod db;
+mod funding;
 mod handlers;
 mod liquidation;
 mod price_feed;
@@ -19,7 +20,7 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::state::AppState;
-use crate::middleware::auth_middleware;
+use crate::middleware::{auth_middleware, rate_limit_middleware, RateLimiter};
 
 #[tokio::main]
 async fn main() {
@@ -52,6 +53,9 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // 限流器: 100 请求/分钟/IP
+    let rate_limiter = Arc::new(RateLimiter::default());
+
     // 构建路由
     let app = Router::new()
         // 健康检查
@@ -74,8 +78,9 @@ async fn main() {
         .route("/markets", get(handlers::get_markets))
         // WebSocket
         .route("/ws", get(websocket::ws_handler))
-        // 中间件
+        // 中间件 (顺序: cors -> rate_limit -> auth)
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware))
+        .layer(axum_middleware::from_fn_with_state(rate_limiter.clone(), rate_limit_middleware))
         .layer(cors)
         .with_state(state);
 

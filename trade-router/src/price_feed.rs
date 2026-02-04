@@ -32,11 +32,23 @@ pub async fn start_price_feed(state: Arc<AppState>, interval_secs: u64) {
                 if let Some(sol) = prices.get("solana") {
                     state.prices.insert(Market::SolPerp, *sol);
                 }
+                if let Some(doge) = prices.get("dogecoin") {
+                    state.prices.insert(Market::DogePerp, *doge);
+                }
+                if let Some(avax) = prices.get("avalanche-2") {
+                    state.prices.insert(Market::AvaxPerp, *avax);
+                }
+                if let Some(link) = prices.get("chainlink") {
+                    state.prices.insert(Market::LinkPerp, *link);
+                }
                 
-                info!("📈 Prices updated: BTC=${:.0}, ETH=${:.0}, SOL=${:.0}",
+                info!("📈 Prices updated: BTC=${:.0}, ETH=${:.0}, SOL=${:.0}, DOGE=${:.4}, AVAX=${:.1}, LINK=${:.1}",
                       prices.get("bitcoin").unwrap_or(&0.0),
                       prices.get("ethereum").unwrap_or(&0.0),
-                      prices.get("solana").unwrap_or(&0.0));
+                      prices.get("solana").unwrap_or(&0.0),
+                      prices.get("dogecoin").unwrap_or(&0.0),
+                      prices.get("avalanche-2").unwrap_or(&0.0),
+                      prices.get("chainlink").unwrap_or(&0.0));
             }
             Err(e) => {
                 warn!("Price fetch failed: {}", e);
@@ -48,7 +60,7 @@ pub async fn start_price_feed(state: Arc<AppState>, interval_secs: u64) {
 async fn fetch_prices(client: &reqwest::Client) -> Result<std::collections::HashMap<String, f64>, String> {
     let resp = client
         .get(COINGECKO_URL)
-        .query(&[("ids", "bitcoin,ethereum,solana"), ("vs_currencies", "usd")])
+        .query(&[("ids", "bitcoin,ethereum,solana,dogecoin,avalanche-2,chainlink"), ("vs_currencies", "usd")])
         .header("User-Agent", "AI-Perp-DEX/1.0")
         .send()
         .await
@@ -63,7 +75,14 @@ async fn fetch_prices(client: &reqwest::Client) -> Result<std::collections::Hash
     // Parse with better error handling
     tracing::debug!("API response: {:?}", data);
     
-    for (coin, _) in [("bitcoin", "BTC"), ("ethereum", "ETH"), ("solana", "SOL")] {
+    for (coin, _) in [
+        ("bitcoin", "BTC"), 
+        ("ethereum", "ETH"), 
+        ("solana", "SOL"),
+        ("dogecoin", "DOGE"),
+        ("avalanche-2", "AVAX"),
+        ("chainlink", "LINK"),
+    ] {
         if let Some(price) = data.get(coin).and_then(|v| v.get("usd")).and_then(|v| v.as_f64()) {
             prices.insert(coin.to_string(), price);
             tracing::debug!("Parsed {} = ${}", coin, price);

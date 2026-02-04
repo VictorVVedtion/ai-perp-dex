@@ -1,7 +1,7 @@
 use crate::db::Database;
 use crate::types::{
-    AgentInfo, AgentStats, Market, Position, PositionStatus, PositionWithPnl, Quote, Side, TradeRequest,
-    WsMessage,
+    AgentInfo, AgentStats, Market, Position, PositionStatus, PositionWithPnl, Quote, RiskLimits,
+    Side, TradeRequest, WsMessage,
 };
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -27,6 +27,8 @@ pub struct AppState {
     pub agents: Arc<DashMap<String, AgentInfo>>,
     /// API Key -> Agent ID 映射
     pub api_keys: Arc<DashMap<String, String>>,
+    /// Agent 风险限额 (agent_id -> RiskLimits)
+    pub agent_limits: Arc<DashMap<String, RiskLimits>>,
     /// SQLite 数据库
     pub db: Arc<Database>,
 }
@@ -54,6 +56,7 @@ impl AppState {
             prices: Arc::new(DashMap::new()),
             agents: Arc::new(DashMap::new()),
             api_keys: Arc::new(DashMap::new()),
+            agent_limits: Arc::new(DashMap::new()),
             db: Arc::new(db),
         };
         
@@ -61,6 +64,9 @@ impl AppState {
         state.prices.insert(Market::BtcPerp, 84000.0);
         state.prices.insert(Market::EthPerp, 2200.0);
         state.prices.insert(Market::SolPerp, 130.0);
+        state.prices.insert(Market::DogePerp, 0.18);
+        state.prices.insert(Market::AvaxPerp, 22.0);
+        state.prices.insert(Market::LinkPerp, 14.0);
         
         state
     }
@@ -299,6 +305,98 @@ impl AppState {
     pub fn get_agent_stats(&self, agent_id: &str) -> Result<AgentStats, String> {
         self.db.get_agent_stats(agent_id)
             .map_err(|e| format!("Database error: {}", e))
+    }
+    
+    /// 设置 Agent 风险限额
+    pub fn set_agent_limits(&self, agent_id: &str, limits: RiskLimits) {
+        self.agent_limits.insert(agent_id.to_string(), limits);
+    }
+    
+    /// 获取 Agent 风险限额
+    pub fn get_agent_limits(&self, agent_id: &str) -> RiskLimits {
+        self.agent_limits
+            .get(agent_id)
+            .map(|l| l.clone())
+            .unwrap_or_default()
+    }
+    
+    /// 检查交易请求是否符合风险限额
+    pub fn check_risk_limits(&self, agent_id: &str, size_usdc: f64, leverage: u8) -> Result<(), String> {
+        let limits = self.get_agent_limits(agent_id);
+        
+        // 检查单仓大小
+        if size_usdc > limits.max_position_size {
+            return Err(format!(
+                "Position size {} exceeds max allowed {}",
+                size_usdc, limits.max_position_size
+            ));
+        }
+        
+        // 检查杠杆
+        if leverage > limits.max_leverage {
+            return Err(format!(
+                "Leverage {} exceeds max allowed {}",
+                leverage, limits.max_leverage
+            ));
+        }
+        
+        // 计算当前总敞口
+        let current_exposure: f64 = self.get_agent_positions(agent_id)
+            .iter()
+            .filter(|p| p.status == PositionStatus::Active)
+            .map(|p| p.size_usdc)
+            .sum();
+        
+        // 检查新仓位是否会超过总敞口限额
+        if current_exposure + size_usdc > limits.max_total_exposure {
+            return Err(format!(
+                "Total exposure {} would exceed max allowed {}",
+                current_exposure + size_usdc, limits.max_total_exposure
+            ));
+        }
+        
+        // 检查日亏损限额
+        let today_start = chrono::Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
+        let today_start = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(today_start, chrono::Utc);
+        
+        let daily_loss: f64 = self.positions
+            .iter()
+            .filter(|p| {
+                (p.trader_agent == agent_id || p.mm_agent == agent_id) &&
+                p.status == PositionStatus::Closed &&
+                p.closed_at.map(|t| t >= today_start).unwrap_or(false)
+            })
+            .map(|p| {
+                // 简化: 从 DB 查更准确，这里用内存估算
+                let current_price = self.prices.get(&p.market).map(|pr| *pr).unwrap_or(p.entry_price);
+                let price_change = (current_price - p.entry_price) / p.entry_price;
+                let leveraged_change = price_change * p.leverage as f64;
+                
+                let pnl = if p.trader_agent == agent_id {
+                    match p.side {
+                        Side::Long => p.size_usdc * leveraged_change,
+                        Side::Short => p.size_usdc * (-leveraged_change),
+                    }
+                } else {
+                    // MM 方向相反
+                    match p.side {
+                        Side::Long => -p.size_usdc * leveraged_change,
+                        Side::Short => -p.size_usdc * (-leveraged_change),
+                    }
+                };
+                
+                if pnl < 0.0 { -pnl } else { 0.0 }
+            })
+            .sum();
+        
+        if daily_loss > limits.daily_loss_limit {
+            return Err(format!(
+                "Daily loss {} exceeds limit {}",
+                daily_loss, limits.daily_loss_limit
+            ));
+        }
+        
+        Ok(())
     }
 }
 

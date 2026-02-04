@@ -11,6 +11,12 @@ pub enum Market {
     EthPerp,
     #[serde(rename = "SOL-PERP")]
     SolPerp,
+    #[serde(rename = "DOGE-PERP")]
+    DogePerp,
+    #[serde(rename = "AVAX-PERP")]
+    AvaxPerp,
+    #[serde(rename = "LINK-PERP")]
+    LinkPerp,
 }
 
 /// 交易方向
@@ -249,4 +255,39 @@ pub struct AgentStats {
     pub total_pnl: f64,
     pub avg_pnl: f64,
     pub total_volume: f64,
+}
+
+// ============ 风险限额 ============
+
+/// Agent 风险限额
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskLimits {
+    /// 最大单仓大小 (USDC)
+    pub max_position_size: f64,
+    /// 最大杠杆
+    pub max_leverage: u8,
+    /// 最大总敞口 (USDC)
+    pub max_total_exposure: f64,
+    /// 日亏损限额 (USDC)
+    pub daily_loss_limit: f64,
+}
+
+impl Default for RiskLimits {
+    fn default() -> Self {
+        Self {
+            max_position_size: 100_000.0,  // 10万 USDC
+            max_leverage: 20,
+            max_total_exposure: 500_000.0, // 50万 USDC
+            daily_loss_limit: 10_000.0,    // 1万 USDC
+        }
+    }
+}
+
+/// 设置风险限额的输入
+#[derive(Debug, Deserialize)]
+pub struct SetRiskLimits {
+    pub max_position_size: Option<f64>,
+    pub max_leverage: Option<u8>,
+    pub max_total_exposure: Option<f64>,
+    pub daily_loss_limit: Option<f64>,
 }
