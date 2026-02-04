@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::types::{
-    AcceptQuote, AgentInfo, AgentPublicInfo, ApiResponse, ClosePosition, CreateQuote,
+    AcceptQuote, AgentInfo, AgentPublicInfo, AgentStats, ApiResponse, ClosePosition, CreateQuote,
     CreateTradeRequest, Market, MarketInfo, PaginatedResponse, PaginationParams, Position,
     PositionWithPnl, Quote, RegisterAgent, TradeRequest,
 };

@@ -160,7 +160,7 @@ pub enum WsMessage {
     #[serde(rename = "position_closed")]
     PositionClosed { position_id: Uuid, pnl_trader: f64, pnl_mm: f64 },
     #[serde(rename = "liquidation")]
-    Liquidation { position_id: Uuid, liquidated_agent: String },
+    Liquidation(crate::liquidation::LiquidationEvent),
     #[serde(rename = "error")]
     Error { message: String },
     
@@ -236,4 +236,17 @@ pub struct AgentPublicInfo {
     pub name: Option<String>,
     pub is_mm: bool,
     pub created_at: DateTime<Utc>,
+}
+
+/// Agent 交易统计
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentStats {
+    pub agent_id: String,
+    pub total_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub total_pnl: f64,
+    pub avg_pnl: f64,
+    pub total_volume: f64,
 }

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::types::{AgentInfo, Market, Position, PositionStatus, PositionWithPnl, Side};
+use crate::types::{AgentInfo, AgentStats, Market, Position, PositionStatus, PositionWithPnl, Side};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -248,6 +248,54 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+    
+    /// 获取 Agent 交易统计 (从 positions 表聚合)
+    pub fn get_agent_stats(&self, agent_id: &str) -> rusqlite::Result<AgentStats> {
+        let conn = self.conn.lock().unwrap();
+        
+        // 查询该 agent 作为 trader 的已平仓仓位统计
+        let (total_trades, wins, losses, total_pnl, total_volume): (u32, u32, u32, f64, f64) = conn.query_row(
+            r#"SELECT 
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl_trader > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl_trader <= 0 THEN 1 ELSE 0 END) as losses,
+                COALESCE(SUM(pnl_trader), 0) as total_pnl,
+                COALESCE(SUM(size_usdc), 0) as total_volume
+            FROM positions 
+            WHERE trader_agent = ?1 AND status = 'Closed'"#,
+            params![agent_id],
+            |row| Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, f64>(3)?,
+                row.get::<_, f64>(4)?,
+            )),
+        )?;
+        
+        let win_rate = if total_trades > 0 {
+            wins as f64 / total_trades as f64
+        } else {
+            0.0
+        };
+        
+        let avg_pnl = if total_trades > 0 {
+            total_pnl / total_trades as f64
+        } else {
+            0.0
+        };
+        
+        Ok(AgentStats {
+            agent_id: agent_id.to_string(),
+            total_trades,
+            wins,
+            losses,
+            win_rate,
+            total_pnl,
+            avg_pnl,
+            total_volume,
+        })
     }
     
     fn row_to_position(&self, row: &rusqlite::Row) -> rusqlite::Result<Position> {
