@@ -1,0 +1,259 @@
+//! SQLite persistence layer
+
+use rusqlite::{Connection, params};
+use std::sync::Mutex;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
+
+use crate::types::*;
+
+pub struct Database {
+    conn: Mutex<Connection>,
+}
+
+impl Database {
+    pub fn new(path: &str) -> rusqlite::Result<Self> {
+        let conn = Connection::open(path)?;
+        let db = Self { conn: Mutex::new(conn) };
+        db.init_tables()?;
+        Ok(db)
+    }
+    
+    pub fn in_memory() -> rusqlite::Result<Self> {
+        Self::new(":memory:")
+    }
+    
+    fn init_tables(&self) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        
+        conn.execute_batch(r#"
+            -- Agents table
+            CREATE TABLE IF NOT EXISTS agents (
+                id TEXT PRIMARY KEY,
+                api_key TEXT UNIQUE NOT NULL,
+                name TEXT,
+                is_mm INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            
+            -- Positions table
+            CREATE TABLE IF NOT EXISTS positions (
+                id TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL,
+                quote_id TEXT NOT NULL,
+                trader_agent TEXT NOT NULL,
+                mm_agent TEXT NOT NULL,
+                market TEXT NOT NULL,
+                side TEXT NOT NULL,
+                size_usdc REAL NOT NULL,
+                leverage INTEGER NOT NULL,
+                entry_price REAL NOT NULL,
+                funding_rate REAL NOT NULL,
+                trader_collateral REAL NOT NULL,
+                mm_collateral REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                closed_at TEXT,
+                pnl_trader REAL,
+                pnl_mm REAL
+            );
+            
+            -- Trades table (history)
+            CREATE TABLE IF NOT EXISTS trades (
+                id TEXT PRIMARY KEY,
+                position_id TEXT NOT NULL,
+                trader_agent TEXT NOT NULL,
+                mm_agent TEXT NOT NULL,
+                market TEXT NOT NULL,
+                side TEXT NOT NULL,
+                size_usdc REAL NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL,
+                pnl_trader REAL,
+                pnl_mm REAL,
+                created_at TEXT NOT NULL,
+                closed_at TEXT
+            );
+            
+            -- Create indexes
+            CREATE INDEX IF NOT EXISTS idx_positions_trader ON positions(trader_agent);
+            CREATE INDEX IF NOT EXISTS idx_positions_mm ON positions(mm_agent);
+            CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
+            CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key);
+        "#)?;
+        
+        Ok(())
+    }
+    
+    // ========== Agent Operations ==========
+    
+    pub fn save_agent(&self, agent: &AgentInfo) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO agents (id, api_key, name, is_mm, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                agent.id,
+                agent.api_key,
+                agent.name,
+                agent.is_mm as i32,
+                agent.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+    
+    pub fn get_agent_by_api_key(&self, api_key: &str) -> rusqlite::Result<Option<AgentInfo>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, api_key, name, is_mm, created_at FROM agents WHERE api_key = ?1")?;
+        
+        let mut rows = stmt.query(params![api_key])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(AgentInfo {
+                id: row.get(0)?,
+                api_key: row.get(1)?,
+                name: row.get(2)?,
+                is_mm: row.get::<_, i32>(3)? != 0,
+                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    
+    pub fn get_agent(&self, agent_id: &str) -> rusqlite::Result<Option<AgentInfo>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, api_key, name, is_mm, created_at FROM agents WHERE id = ?1")?;
+        
+        let mut rows = stmt.query(params![agent_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(AgentInfo {
+                id: row.get(0)?,
+                api_key: row.get(1)?,
+                name: row.get(2)?,
+                is_mm: row.get::<_, i32>(3)? != 0,
+                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    
+    // ========== Position Operations ==========
+    
+    pub fn save_position(&self, pos: &Position) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT OR REPLACE INTO positions 
+               (id, request_id, quote_id, trader_agent, mm_agent, market, side, 
+                size_usdc, leverage, entry_price, funding_rate, trader_collateral, 
+                mm_collateral, status, created_at, closed_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"#,
+            params![
+                pos.id.to_string(),
+                pos.request_id.to_string(),
+                pos.quote_id.to_string(),
+                pos.trader_agent,
+                pos.mm_agent,
+                format!("{:?}", pos.market),
+                format!("{:?}", pos.side),
+                pos.size_usdc,
+                pos.leverage,
+                pos.entry_price,
+                pos.funding_rate,
+                pos.trader_collateral,
+                pos.mm_collateral,
+                format!("{:?}", pos.status),
+                pos.created_at.to_rfc3339(),
+                pos.closed_at.map(|dt| dt.to_rfc3339()),
+            ],
+        )?;
+        Ok(())
+    }
+    
+    pub fn get_positions_by_agent(&self, agent_id: &str) -> rusqlite::Result<Vec<Position>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM positions WHERE (trader_agent = ?1 OR mm_agent = ?1) AND status = 'Active'"
+        )?;
+        
+        let mut positions = Vec::new();
+        let mut rows = stmt.query(params![agent_id])?;
+        
+        while let Some(row) = rows.next()? {
+            if let Ok(pos) = self.row_to_position(row) {
+                positions.push(pos);
+            }
+        }
+        
+        Ok(positions)
+    }
+    
+    pub fn close_position(&self, position_id: &Uuid, pnl_trader: f64, pnl_mm: f64) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE positions SET status = 'Closed', closed_at = ?1, pnl_trader = ?2, pnl_mm = ?3 WHERE id = ?4",
+            params![
+                Utc::now().to_rfc3339(),
+                pnl_trader,
+                pnl_mm,
+                position_id.to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+    
+    fn row_to_position(&self, row: &rusqlite::Row) -> rusqlite::Result<Position> {
+        Ok(Position {
+            id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+            request_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+            quote_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+            trader_agent: row.get(3)?,
+            mm_agent: row.get(4)?,
+            market: parse_market(&row.get::<_, String>(5)?),
+            side: parse_side(&row.get::<_, String>(6)?),
+            size_usdc: row.get(7)?,
+            leverage: row.get(8)?,
+            entry_price: row.get(9)?,
+            funding_rate: row.get(10)?,
+            trader_collateral: row.get(11)?,
+            mm_collateral: row.get(12)?,
+            status: parse_status(&row.get::<_, String>(13)?),
+            created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(14)?)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            closed_at: row.get::<_, Option<String>>(15)?
+                .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&Utc)),
+        })
+    }
+}
+
+fn parse_market(s: &str) -> Market {
+    match s {
+        "BtcPerp" | "BTC-PERP" => Market::BtcPerp,
+        "EthPerp" | "ETH-PERP" => Market::EthPerp,
+        "SolPerp" | "SOL-PERP" => Market::SolPerp,
+        _ => Market::BtcPerp,
+    }
+}
+
+fn parse_side(s: &str) -> Side {
+    match s.to_lowercase().as_str() {
+        "long" => Side::Long,
+        "short" => Side::Short,
+        _ => Side::Long,
+    }
+}
+
+fn parse_status(s: &str) -> PositionStatus {
+    match s {
+        "Active" => PositionStatus::Active,
+        "Closed" => PositionStatus::Closed,
+        "Liquidated" => PositionStatus::Liquidated,
+        _ => PositionStatus::Pending,
+    }
+}

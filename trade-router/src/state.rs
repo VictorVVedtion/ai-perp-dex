@@ -1,3 +1,4 @@
+use crate::db::Database;
 use crate::types::*;
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -7,11 +8,11 @@ use uuid::Uuid;
 /// 应用状态 - 线程安全
 #[derive(Clone)]
 pub struct AppState {
-    /// 活跃的交易请求
+    /// 活跃的交易请求 (内存缓存)
     pub requests: Arc<DashMap<Uuid, TradeRequest>>,
     /// 活跃的报价 (request_id -> Vec<Quote>)
     pub quotes: Arc<DashMap<Uuid, Vec<Quote>>>,
-    /// 仓位
+    /// 仓位 (内存缓存)
     pub positions: Arc<DashMap<Uuid, Position>>,
     /// Agent 的仓位索引 (agent_id -> Vec<position_id>)
     pub agent_positions: Arc<DashMap<String, Vec<Uuid>>>,
@@ -19,14 +20,26 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<WsMessage>,
     /// 模拟价格 (实际应从 Oracle 获取)
     pub prices: Arc<DashMap<Market, f64>>,
-    /// 注册的 Agent (agent_id -> AgentInfo)
+    /// 注册的 Agent (内存缓存)
     pub agents: Arc<DashMap<String, AgentInfo>>,
     /// API Key -> Agent ID 映射
     pub api_keys: Arc<DashMap<String, String>>,
+    /// SQLite 数据库
+    pub db: Arc<Database>,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        Self::with_db_path("data/trade-router.db")
+    }
+    
+    pub fn with_db_path(db_path: &str) -> Self {
+        // Ensure data directory exists
+        if let Some(parent) = std::path::Path::new(db_path).parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        
+        let db = Database::new(db_path).expect("Failed to open database");
         let (broadcast_tx, _) = broadcast::channel(1000);
         
         let state = Self {
@@ -38,6 +51,7 @@ impl AppState {
             prices: Arc::new(DashMap::new()),
             agents: Arc::new(DashMap::new()),
             api_keys: Arc::new(DashMap::new()),
+            db: Arc::new(db),
         };
         
         // 初始化模拟价格
@@ -48,21 +62,52 @@ impl AppState {
         state
     }
     
-    /// 注册 Agent
+    /// 注册 Agent (内存 + 持久化)
     pub fn register_agent(&self, agent: AgentInfo) {
+        // Persist to database
+        if let Err(e) = self.db.save_agent(&agent) {
+            tracing::error!("Failed to save agent to DB: {}", e);
+        }
+        
+        // Update in-memory cache
         self.api_keys.insert(agent.api_key.clone(), agent.id.clone());
         self.agents.insert(agent.id.clone(), agent);
     }
     
     /// 根据 ID 获取 Agent
     pub fn get_agent(&self, agent_id: &str) -> Option<AgentInfo> {
-        self.agents.get(agent_id).map(|r| r.value().clone())
+        // Check memory cache first
+        if let Some(agent) = self.agents.get(agent_id) {
+            return Some(agent.value().clone());
+        }
+        
+        // Fall back to database
+        if let Ok(Some(agent)) = self.db.get_agent(agent_id) {
+            // Update cache
+            self.api_keys.insert(agent.api_key.clone(), agent.id.clone());
+            self.agents.insert(agent.id.clone(), agent.clone());
+            return Some(agent);
+        }
+        
+        None
     }
     
     /// 根据 API Key 验证 Agent
     pub fn validate_api_key(&self, api_key: &str) -> Option<AgentInfo> {
-        self.api_keys.get(api_key)
-            .and_then(|agent_id| self.agents.get(agent_id.value()).map(|a| a.value().clone()))
+        // Check memory cache first
+        if let Some(agent_id) = self.api_keys.get(api_key) {
+            return self.agents.get(agent_id.value()).map(|a| a.value().clone());
+        }
+        
+        // Fall back to database
+        if let Ok(Some(agent)) = self.db.get_agent_by_api_key(api_key) {
+            // Update cache
+            self.api_keys.insert(agent.api_key.clone(), agent.id.clone());
+            self.agents.insert(agent.id.clone(), agent.clone());
+            return Some(agent);
+        }
+        
+        None
     }
     
     /// 添加交易请求
@@ -133,9 +178,14 @@ impl AppState {
             closed_at: None,
         };
         
-        // 保存仓位
+        // 保存仓位到内存
         let pos_id = position.id;
         self.positions.insert(pos_id, position.clone());
+        
+        // 持久化到数据库
+        if let Err(e) = self.db.save_position(&position) {
+            tracing::error!("Failed to save position to DB: {}", e);
+        }
         
         // 更新 agent 索引
         self.agent_positions.entry(request.agent_id).or_insert(Vec::new()).push(pos_id);
@@ -188,6 +238,11 @@ impl AppState {
         // 更新状态
         position.status = PositionStatus::Closed;
         position.closed_at = Some(chrono::Utc::now());
+        
+        // 持久化到数据库
+        if let Err(e) = self.db.close_position(&position_id, pnl_trader, pnl_mm) {
+            tracing::error!("Failed to close position in DB: {}", e);
+        }
         
         // 广播
         let _ = self.broadcast_tx.send(WsMessage::PositionClosed { 

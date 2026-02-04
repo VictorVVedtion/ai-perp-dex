@@ -25,3 +25,4 @@ logs/
 # Environment
 .env
 .env.local
+data/*.db

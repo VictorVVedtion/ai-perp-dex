@@ -1,3 +1,4 @@
+mod db;
 mod handlers;
 mod state;
 mod types;
