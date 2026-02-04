@@ -3,6 +3,8 @@ mod funding;
 mod handlers;
 mod liquidation;
 mod price_feed;
+mod demo_mm;
+mod incentives;
 mod margin;
 mod middleware;
 mod state;
@@ -56,6 +58,15 @@ async fn main() {
         ).await;
     });
 
+    // 启动 Demo MM (自动报价，方便测试)
+    let demo_state = state.clone();
+    tokio::spawn(async move {
+        demo_mm::start_demo_mm(
+            demo_state,
+            demo_mm::DemoMmConfig::default(),
+        ).await;
+    });
+
     // CORS 配置
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -73,6 +84,7 @@ async fn main() {
         .route("/agents/register", post(handlers::register_agent))
         .route("/agents/:agent_id", get(handlers::get_agent))
         .route("/agents/:agent_id/stats", get(handlers::get_agent_stats))
+        .route("/mm/leaderboard", get(handlers::get_mm_leaderboard))
         .route("/agents/:agent_id/limits", get(handlers::get_agent_limits).post(handlers::set_agent_limits))
         // 交易 API
         .route("/trade/request", post(handlers::create_trade_request))

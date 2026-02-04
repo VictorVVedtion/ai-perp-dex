@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     Json,
 };
 use chrono::{Duration, Utc};
@@ -334,4 +335,18 @@ pub async fn get_agent_limits(
     
     let limits = state.get_agent_limits(&agent_id);
     Ok(Json(ApiResponse::ok(limits)))
+}
+
+// ========== MM Leaderboard ==========
+
+pub async fn get_mm_leaderboard(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let leaderboard = crate::incentives::get_mm_leaderboard(state).await;
+    
+    Json(ApiResponse {
+        success: true,
+        data: Some(leaderboard),
+        error: None,
+    })
 }
