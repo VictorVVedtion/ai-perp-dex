@@ -4,6 +4,19 @@
 
 > v2: 不需要订单簿，Agent 互为对手方，直接撮合。
 
+## 🚨 Devnet Deployment
+
+| Component | Status | Address/URL |
+|-----------|--------|-------------|
+| **Escrow Program** | ✅ Deployed | `6F37235k7H3JXTPvRv9w1uAAdPKkcD9avVqmzUTxGpRC` |
+| **Trade Router** | ✅ Running | `http://localhost:8080` |
+| **WebSocket** | ✅ Active | `ws://localhost:8080/ws` |
+
+```bash
+# 验证合约
+solana program show 6F37235k7H3JXTPvRv9w1uAAdPKkcD9avVqmzUTxGpRC --url devnet
+```
+
 ## 🎯 核心理念
 
 **Agent 本身就是流动性**
