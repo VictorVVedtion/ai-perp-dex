@@ -36,7 +36,7 @@ import {
 } from "./pdas";
 
 // Import IDL
-import idl from "../../solana-program/target/idl/ai_perp_dex.json";
+import idl from "./idl.json";
 
 const USDC_DECIMALS = 6;
 const PRICE_DECIMALS = 6;
@@ -363,7 +363,7 @@ export class AiPerpDexClient {
    */
   async getExchange(): Promise<Exchange> {
     const [exchange] = getExchangePDA(this.programId);
-    return await this.program.account.exchange.fetch(exchange) as Exchange;
+    return await (this.program.account as any).exchange.fetch(exchange) as Exchange;
   }
 
   /**
@@ -392,7 +392,7 @@ export class AiPerpDexClient {
   async getAgent(owner: PublicKey): Promise<Agent | null> {
     const [agent] = getAgentPDA(owner, this.programId);
     try {
-      return await this.program.account.agent.fetch(agent) as Agent;
+      return await (this.program.account as any).agent.fetch(agent) as Agent;
     } catch {
       return null;
     }
@@ -432,7 +432,7 @@ export class AiPerpDexClient {
     const [agent] = getAgentPDA(owner, this.programId);
     const [position] = getPositionPDA(agent, marketIndex, this.programId);
     try {
-      return await this.program.account.position.fetch(position) as Position;
+      return await (this.program.account as any).position.fetch(position) as Position;
     } catch {
       return null;
     }
@@ -494,7 +494,7 @@ export class AiPerpDexClient {
   async getMarket(marketIndex: MarketIndex): Promise<Market | null> {
     const [market] = getMarketPDA(marketIndex, this.programId);
     try {
-      return await this.program.account.market.fetch(market) as Market;
+      return await (this.program.account as any).market.fetch(market) as Market;
     } catch {
       return null;
     }
