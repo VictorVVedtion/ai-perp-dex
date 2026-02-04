@@ -1,5 +1,6 @@
 mod db;
 mod handlers;
+mod liquidation;
 mod margin;
 mod middleware;
 mod state;
@@ -29,6 +30,15 @@ async fn main() {
     // 创建共享状态
     let state = Arc::new(AppState::new());
 
+    // 启动强平引擎 (后台任务)
+    let liq_state = state.clone();
+    tokio::spawn(async move {
+        liquidation::start_liquidation_engine(
+            liq_state,
+            liquidation::LiquidationConfig::default(),
+        ).await;
+    });
+
     // CORS 配置
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -42,6 +52,7 @@ async fn main() {
         // Agent API
         .route("/agents/register", post(handlers::register_agent))
         .route("/agents/:agent_id", get(handlers::get_agent))
+        .route("/agents/:agent_id/stats", get(handlers::get_agent_stats))
         // 交易 API
         .route("/trade/request", post(handlers::create_trade_request))
         .route("/trade/quote", post(handlers::create_quote))

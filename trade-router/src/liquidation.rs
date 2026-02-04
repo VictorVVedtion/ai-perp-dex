@@ -33,7 +33,7 @@ impl Default for LiquidationConfig {
 }
 
 /// Result of a liquidation check
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LiquidationEvent {
     pub position_id: String,
     pub agent_id: String,

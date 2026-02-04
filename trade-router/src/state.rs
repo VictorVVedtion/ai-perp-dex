@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::types::{
-    AgentInfo, Market, Position, PositionStatus, PositionWithPnl, Quote, Side, TradeRequest,
+    AgentInfo, AgentStats, Market, Position, PositionStatus, PositionWithPnl, Quote, Side, TradeRequest,
     WsMessage,
 };
 use dashmap::DashMap;
@@ -292,6 +292,12 @@ impl AppState {
         offset: u32
     ) -> Result<(Vec<PositionWithPnl>, u32), String> {
         self.db.get_closed_positions_by_agent(agent_id, limit, offset)
+            .map_err(|e| format!("Database error: {}", e))
+    }
+    
+    /// 获取 Agent 交易统计
+    pub fn get_agent_stats(&self, agent_id: &str) -> Result<AgentStats, String> {
+        self.db.get_agent_stats(agent_id)
             .map_err(|e| format!("Database error: {}", e))
     }
 }

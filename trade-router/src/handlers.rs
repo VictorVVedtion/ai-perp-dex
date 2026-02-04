@@ -228,6 +228,17 @@ pub async fn get_agent(
     }
 }
 
+/// GET /agents/:agent_id/stats - 获取 Agent 交易统计
+pub async fn get_agent_stats(
+    State(state): State<Arc<AppState>>,
+    Path(agent_id): Path<String>,
+) -> Result<Json<ApiResponse<AgentStats>>, StatusCode> {
+    match state.get_agent_stats(&agent_id) {
+        Ok(stats) => Ok(Json(ApiResponse::ok(stats))),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
 /// GET /positions/:agent_id/margin - 获取仓位保证金信息
 pub async fn get_positions_margin(
     State(state): State<Arc<AppState>>,
