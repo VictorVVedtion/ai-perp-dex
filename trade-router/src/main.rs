@@ -73,6 +73,7 @@ async fn main() {
         .route("/agents/register", post(handlers::register_agent))
         .route("/agents/:agent_id", get(handlers::get_agent))
         .route("/agents/:agent_id/stats", get(handlers::get_agent_stats))
+        .route("/agents/:agent_id/limits", get(handlers::get_agent_limits).post(handlers::set_agent_limits))
         // 交易 API
         .route("/trade/request", post(handlers::create_trade_request))
         .route("/trade/quote", post(handlers::create_quote))
