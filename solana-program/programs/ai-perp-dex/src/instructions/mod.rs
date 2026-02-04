@@ -6,6 +6,8 @@ pub mod open_position;
 pub mod close_position;
 pub mod liquidate;
 pub mod settle_pnl;
+pub mod update_collateral;
+pub mod create_market;
 
 pub use initialize::*;
 pub use register_agent::*;
@@ -15,3 +17,5 @@ pub use open_position::*;
 pub use close_position::*;
 pub use liquidate::*;
 pub use settle_pnl::*;
+pub use update_collateral::*;
+pub use create_market::*;

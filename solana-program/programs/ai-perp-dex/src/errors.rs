@@ -43,4 +43,7 @@ pub enum PerpError {
     
     #[msg("Withdrawal would leave insufficient margin")]
     InsufficientMargin,
+    
+    #[msg("Invalid parameter")]
+    InvalidParameter,
 }

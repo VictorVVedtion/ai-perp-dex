@@ -60,4 +60,28 @@ pub mod ai_perp_dex {
     pub fn settle_pnl(ctx: Context<SettlePnl>, market_index: u8) -> Result<()> {
         instructions::settle_pnl::handler(ctx, market_index)
     }
+
+    /// Update collateral mint (admin only)
+    pub fn update_collateral(ctx: Context<UpdateCollateral>) -> Result<()> {
+        instructions::update_collateral::handler(ctx)
+    }
+
+    /// Create a new market (admin only)
+    pub fn create_market(
+        ctx: Context<CreateMarket>,
+        market_index: u8,
+        symbol: [u8; 16],
+        initial_margin_rate: u16,
+        maintenance_margin_rate: u16,
+        max_leverage: u8,
+    ) -> Result<()> {
+        instructions::create_market::handler(
+            ctx,
+            market_index,
+            symbol,
+            initial_margin_rate,
+            maintenance_margin_rate,
+            max_leverage,
+        )
+    }
 }

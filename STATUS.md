@@ -1,6 +1,6 @@
 # AI Perp DEX - 项目状态报告
 
-**更新时间:** 2026-02-04 14:20 PST (Last commit: d6e8f25)
+**更新时间:** 2026-02-04 15:30 PST
 
 ---
 
@@ -14,7 +14,8 @@
 | Agent 认证 | ✅ API Key | 80% |
 | 实时价格 | ✅ CoinGecko | 100% |
 | 前端 Dashboard | ⚠️ 基础 | 40% |
-| 链上结算 | ❌ 未开始 | 0% |
+| **链上结算** | ✅ **完成!** | **100%** |
+| **结算服务** | ✅ **运行中** | **100%** |
 
 ---
 
@@ -218,3 +219,57 @@ python examples/demo.py
 ---
 
 **总结:** 基础架构已就位，需要完成 Agent 间交易的完整测试，然后补充身份验证和持久化。
+
+---
+
+## 🔗 链上结算 (NEW!)
+
+**更新时间:** 2026-02-04 15:30 PST
+
+### Solana 合约
+
+**Program ID:** `AHjGBth6uAKVipLGnooZ9GYn7vwSKPJLX4Lq7Hio3CjT`
+**Network:** Devnet
+
+**已实现指令:**
+- ✅ `initialize` - 初始化交易所
+- ✅ `register_agent` - 注册 Agent
+- ✅ `create_market` - 创建市场
+- ✅ `update_collateral` - 更新 USDC Mint
+- ✅ `deposit` - 存入抵押金
+- ✅ `withdraw` - 提取抵押金
+- ✅ `open_position` - 开仓
+- ✅ `close_position` - 平仓
+- ✅ `liquidate` - 清算
+- ✅ `settle_pnl` - 结算盈亏
+
+### 结算服务
+
+**位置:** `settlement-service/server.py`
+**端口:** 8081
+
+**API 端点:**
+- `GET /health` - 健康检查
+- `GET /collateral/{owner}` - 查询抵押金
+- `GET /position/{owner}/{market}` - 查询仓位
+- `POST /settle/open` - 开仓结算
+- `POST /settle/close` - 平仓结算
+
+### 测试结果 (2026-02-04)
+
+| 测试 | 状态 | 结果 |
+|------|------|------|
+| 存款 100 USDC | ✅ | Vault +100 |
+| 开仓 0.01 BTC @ $97K | ✅ | 保证金锁定 |
+| 平仓 @ $98K | ✅ | 盈利 $10 |
+| 提款 $50 | ✅ | 钱包 +50 |
+| 集成测试 | ✅ | 盈利 $5 |
+
+### 链上账户
+
+```
+Exchange: C857rEivZuX2PeSfv6v8U8vJnjQzgdTJ4UqWR9Qv18sW
+Agent: Bw5eFy9tTiPoKAq4tuoHDz1QSxxnLa5a7RsoafiLsF4k
+Market (BTC): CAjHhyDqUkmX8XYbNNpR2MNYUxh2fLx2ssCKgu2A7CQ8
+Vault: 7Enqyfoxn6q8HyAo25Yb4HrKxm5caxAafTm9sDHBaaNf
+```

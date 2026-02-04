@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token, TokenAccount};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use crate::state::Exchange;
 
 #[derive(Accounts)]
@@ -17,7 +17,7 @@ pub struct Initialize<'info> {
     pub exchange: Account<'info, Exchange>,
     
     /// USDC mint
-    pub collateral_mint: Account<'info, Mint>,
+    pub collateral_mint: InterfaceAccount<'info, Mint>,
     
     #[account(
         init,
@@ -27,10 +27,10 @@ pub struct Initialize<'info> {
         seeds = [b"vault"],
         bump
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: InterfaceAccount<'info, TokenAccount>,
     
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub rent: Sysvar<'info, Rent>,
 }
 
