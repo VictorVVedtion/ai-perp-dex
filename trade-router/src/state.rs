@@ -19,6 +19,10 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<WsMessage>,
     /// 模拟价格 (实际应从 Oracle 获取)
     pub prices: Arc<DashMap<Market, f64>>,
+    /// 注册的 Agent (agent_id -> AgentInfo)
+    pub agents: Arc<DashMap<String, AgentInfo>>,
+    /// API Key -> Agent ID 映射
+    pub api_keys: Arc<DashMap<String, String>>,
 }
 
 impl AppState {
@@ -32,6 +36,8 @@ impl AppState {
             agent_positions: Arc::new(DashMap::new()),
             broadcast_tx,
             prices: Arc::new(DashMap::new()),
+            agents: Arc::new(DashMap::new()),
+            api_keys: Arc::new(DashMap::new()),
         };
         
         // 初始化模拟价格
@@ -40,6 +46,23 @@ impl AppState {
         state.prices.insert(Market::SolPerp, 130.0);
         
         state
+    }
+    
+    /// 注册 Agent
+    pub fn register_agent(&self, agent: AgentInfo) {
+        self.api_keys.insert(agent.api_key.clone(), agent.id.clone());
+        self.agents.insert(agent.id.clone(), agent);
+    }
+    
+    /// 根据 ID 获取 Agent
+    pub fn get_agent(&self, agent_id: &str) -> Option<AgentInfo> {
+        self.agents.get(agent_id).map(|r| r.value().clone())
+    }
+    
+    /// 根据 API Key 验证 Agent
+    pub fn validate_api_key(&self, api_key: &str) -> Option<AgentInfo> {
+        self.api_keys.get(api_key)
+            .and_then(|agent_id| self.agents.get(agent_id.value()).map(|a| a.value().clone()))
     }
     
     /// 添加交易请求

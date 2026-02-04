@@ -179,3 +179,32 @@ impl ApiResponse<()> {
         }
     }
 }
+
+// ============ Agent 类型 ============
+
+/// 注册 Agent 的输入
+#[derive(Debug, Deserialize)]
+pub struct RegisterAgent {
+    pub agent_id: String,
+    pub name: Option<String>,
+    pub is_mm: Option<bool>,
+}
+
+/// Agent 完整信息 (包含 API key，仅注册时返回)
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentInfo {
+    pub id: String,
+    pub api_key: String,
+    pub name: Option<String>,
+    pub is_mm: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Agent 公开信息 (不含 API key)
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentPublicInfo {
+    pub id: String,
+    pub name: Option<String>,
+    pub is_mm: bool,
+    pub created_at: DateTime<Utc>,
+}

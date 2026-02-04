@@ -34,6 +34,9 @@ async fn main() {
     let app = Router::new()
         // 健康检查
         .route("/health", get(handlers::health))
+        // Agent API
+        .route("/agents/register", post(handlers::register_agent))
+        .route("/agents/:agent_id", get(handlers::get_agent))
         // 交易 API
         .route("/trade/request", post(handlers::create_trade_request))
         .route("/trade/quote", post(handlers::create_quote))

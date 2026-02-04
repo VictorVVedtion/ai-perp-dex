@@ -18,11 +18,13 @@ class Client:
         base_url: str = "http://localhost:8080",
         ws_url: Optional[str] = None,
         agent_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         timeout: float = 30.0,
     ):
         self.base_url = base_url.rstrip("/")
         self.ws_url = ws_url or base_url.replace("http", "ws") + "/ws"
         self.agent_id = agent_id
+        self.api_key = api_key
         self.timeout = timeout
         self._http = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
         self._ws: Optional[WebSocketClientProtocol] = None
@@ -43,6 +45,25 @@ class Client:
         """Check if Trade Router is healthy"""
         r = await self._http.get("/health")
         return r.json()
+    
+    async def register(self, name: Optional[str] = None, is_mm: bool = False) -> dict:
+        """Register this agent and get an API key"""
+        if not self.agent_id:
+            raise ValueError("agent_id required")
+        
+        payload = {
+            "agent_id": self.agent_id,
+            "name": name,
+            "is_mm": is_mm,
+        }
+        r = await self._http.post("/agents/register", json=payload)
+        data = r.json()
+        
+        if data.get("success") and data.get("data"):
+            # Store API key for future requests
+            self.api_key = data["data"].get("api_key")
+        
+        return data
     
     async def get_markets(self) -> List[Market]:
         """Get available markets"""

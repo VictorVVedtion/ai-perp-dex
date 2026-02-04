@@ -165,3 +165,41 @@ pub async fn health() -> Json<serde_json::Value> {
         "version": "0.1.0"
     }))
 }
+
+/// POST /agents/register - 注册新 Agent
+pub async fn register_agent(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<RegisterAgent>,
+) -> Json<ApiResponse<AgentInfo>> {
+    let api_key = format!("ak_{}", Uuid::new_v4().to_string().replace("-", ""));
+    
+    let agent = AgentInfo {
+        id: input.agent_id.clone(),
+        api_key: api_key.clone(),
+        name: input.name,
+        is_mm: input.is_mm.unwrap_or(false),
+        created_at: Utc::now(),
+    };
+    
+    // Store in state (add agents map to AppState)
+    state.register_agent(agent.clone());
+    
+    Json(ApiResponse::ok(agent))
+}
+
+/// GET /agents/:agent_id - 获取 Agent 信息
+pub async fn get_agent(
+    State(state): State<Arc<AppState>>,
+    Path(agent_id): Path<String>,
+) -> Result<Json<ApiResponse<AgentPublicInfo>>, StatusCode> {
+    if let Some(agent) = state.get_agent(&agent_id) {
+        Ok(Json(ApiResponse::ok(AgentPublicInfo {
+            id: agent.id,
+            name: agent.name,
+            is_mm: agent.is_mm,
+            created_at: agent.created_at,
+        })))
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
