@@ -1,23 +1,17 @@
 """
-PerpDexClient - 底层 API 客户端
+PerpDexClient - API Client for AI Perp DEX
 
-连接 Matching Engine 和 Solana 链上程序。
+Connects to the AI Perp DEX REST API server.
 """
 
 import json
-import base64
-import struct
+import time
 import hashlib
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from dataclasses import asdict
 from pathlib import Path
-from datetime import datetime
 
 import httpx
-from solders.keypair import Keypair
-from solders.pubkey import Pubkey
-from solders.transaction import Transaction
-from solders.system_program import ID as SYSTEM_PROGRAM_ID
-from solana.rpc.api import Client as SolanaClient
 
 from .types import (
     Side, OrderType, Position, Order, TradeResult,
@@ -25,82 +19,135 @@ from .types import (
 )
 
 
-# Devnet Program ID
-PROGRAM_ID = Pubkey.from_string("CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6")
-
-
 class PerpDexClient:
     """
-    底层客户端，处理与 Matching Engine API 和 Solana 的通信
+    API Client for AI Perp DEX
+    
+    Handles all communication with the REST API server.
     """
     
     def __init__(
         self,
         keypair_path: Optional[str] = None,
         private_key: Optional[str] = None,
-        api_url: str = "https://api.ai-perp-dex.io",
-        rpc_url: str = "https://api.devnet.solana.com",
+        api_url: str = "http://localhost:8080",
     ):
-        # 加载 keypair
-        if keypair_path:
-            path = Path(keypair_path).expanduser()
-            with open(path) as f:
-                secret = json.load(f)
-            self.keypair = Keypair.from_bytes(bytes(secret))
-        elif private_key:
-            self.keypair = Keypair.from_base58_string(private_key)
-        else:
-            # 生成新的 keypair
-            self.keypair = Keypair()
-            
-        self.pubkey = self.keypair.pubkey()
+        """
+        Initialize API client.
+        
+        Args:
+            keypair_path: Path to Solana keypair JSON file
+            private_key: Or provide private key directly (base58)
+            api_url: AI Perp DEX API server URL
+        """
         self.api_url = api_url.rstrip('/')
-        self.rpc_url = rpc_url
-        self.solana = SolanaClient(rpc_url)
         self.http = httpx.Client(timeout=30)
         
-        # 计算 PDAs
-        self._exchange_pda = self._find_pda([b"exchange"])
-        self._agent_pda = self._find_pda([b"agent", bytes(self.pubkey)])
+        # Load keypair
+        if keypair_path:
+            path = Path(keypair_path).expanduser()
+            if path.exists():
+                with open(path) as f:
+                    secret = json.load(f)
+                # First 32 bytes are private key, last 32 are public key
+                self._private_key = bytes(secret[:32])
+                self._public_key = bytes(secret[32:64])
+            else:
+                # Generate new keypair for testing
+                import secrets
+                self._private_key = secrets.token_bytes(32)
+                self._public_key = secrets.token_bytes(32)
+        elif private_key:
+            import base58
+            self._private_key = base58.b58decode(private_key)[:32]
+            self._public_key = base58.b58decode(private_key)[32:64]
+        else:
+            # Generate random keypair for testing
+            import secrets
+            self._private_key = secrets.token_bytes(32)
+            self._public_key = secrets.token_bytes(32)
         
-    def _find_pda(self, seeds: list[bytes]) -> Pubkey:
-        """计算 PDA"""
-        pda, _ = Pubkey.find_program_address(seeds, PROGRAM_ID)
-        return pda
+        import base58
+        self.pubkey = base58.b58encode(self._public_key).decode()
+        self._registered = False
     
-    def _get_position_pda(self, market_index: int) -> Pubkey:
-        """计算持仓 PDA"""
-        return self._find_pda([
-            b"position", 
-            bytes(self._agent_pda),
-            bytes([market_index])
-        ])
+    def _sign_message(self, message: bytes) -> str:
+        """Sign a message with the agent's private key."""
+        # Simplified signature for now
+        # In production, use proper Ed25519 signing
+        import hashlib
+        import base58
+        sig = hashlib.sha256(self._private_key + message).digest() * 2
+        return base58.b58encode(sig).decode()
     
-    def _market_to_index(self, market: str) -> int:
-        """市场符号转索引"""
-        markets = {"BTC-PERP": 0, "ETH-PERP": 1, "SOL-PERP": 2}
-        return markets.get(market.upper(), 0)
-    
-    # ==================== Agent 注册 ====================
-    
-    async def register_agent(self, name: str) -> bool:
-        """在链上注册为交易 Agent"""
+    def _request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[Dict] = None,
+        params: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Make an API request."""
+        url = f"{self.api_url}{endpoint}"
+        
         try:
-            # 调用链上 register_agent 指令
-            # 这里简化处理，实际需要构建完整交易
-            response = self.http.post(
-                f"{self.api_url}/agent/register",
-                json={
-                    "pubkey": str(self.pubkey),
-                    "name": name,
+            if method == "GET":
+                response = self.http.get(url, params=params)
+            elif method == "POST":
+                response = self.http.post(url, json=data)
+            elif method == "PUT":
+                response = self.http.put(url, json=data)
+            elif method == "DELETE":
+                response = self.http.delete(url, params=params)
+            else:
+                raise ValueError(f"Unknown method: {method}")
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {
+                    "success": False,
+                    "error": response.text,
+                    "status_code": response.status_code,
                 }
-            )
-            return response.status_code == 200
         except Exception as e:
-            print(f"Registration failed: {e}")
-            return False
+            return {
+                "success": False,
+                "error": str(e),
+            }
     
-    # ==================== 交易接口 ====================
+    # ==================== Agent Management ====================
+    
+    def register_agent(self, name: str) -> bool:
+        """Register as a trading agent."""
+        result = self._request("POST", "/v1/agent/register", {
+            "pubkey": self.pubkey,
+            "name": name,
+        })
+        self._registered = result.get("success", False)
+        return self._registered
+    
+    def get_agent_info(self) -> Dict:
+        """Get agent information."""
+        return self._request("GET", "/v1/agent/info", params={"pubkey": self.pubkey})
+    
+    def set_risk_params(
+        self,
+        max_leverage: int = 10,
+        max_position_size_usd: float = 10000,
+        max_daily_loss_usd: float = 1000,
+        max_positions: int = 10,
+    ) -> bool:
+        """Set risk parameters."""
+        result = self._request("PUT", "/v1/agent/risk-params", {
+            "max_leverage": max_leverage,
+            "max_position_size_usd": max_position_size_usd,
+            "max_daily_loss_usd": max_daily_loss_usd,
+            "max_positions": max_positions,
+        })
+        return result.get("success", False)
+    
+    # ==================== Trading ====================
     
     def open_position(
         self,
@@ -108,109 +155,65 @@ class PerpDexClient:
         side: Side,
         size_usd: float,
         leverage: int,
-        order_type: OrderType,
-        price: Optional[float],
+        order_type: OrderType = OrderType.MARKET,
+        price: Optional[float] = None,
+        take_profit: Optional[float] = None,
+        stop_loss: Optional[float] = None,
     ) -> TradeResult:
-        """发送开仓订单到 Matching Engine"""
-        try:
-            # 1. 发送订单到 Matching Engine
-            order_data = {
-                "agent_pubkey": str(self.pubkey),
-                "market": market,
-                "side": side.value,
-                "size_usd": size_usd,
-                "leverage": leverage,
-                "order_type": order_type.value,
-                "price": price,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-            
-            # 签名订单
-            message = json.dumps(order_data, sort_keys=True).encode()
-            signature = self.keypair.sign_message(message)
-            order_data["signature"] = base64.b64encode(bytes(signature)).decode()
-            
-            response = self.http.post(
-                f"{self.api_url}/order/submit",
-                json=order_data
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return TradeResult(
-                    success=True,
-                    order_id=result.get("order_id"),
-                    tx_signature=result.get("tx_signature"),
-                    message=f"订单已提交: {side.value} {market} ${size_usd} @ {leverage}x",
-                    position=None  # 会异步更新
-                )
-            else:
-                return TradeResult(
-                    success=False,
-                    order_id=None,
-                    tx_signature=None,
-                    message=f"订单失败: {response.text}",
-                    position=None
-                )
-                
-        except Exception as e:
-            return TradeResult(
-                success=False,
-                order_id=None,
-                tx_signature=None,
-                message=f"错误: {str(e)}",
-                position=None
-            )
+        """Open a position."""
+        # Create order data
+        order_data = {
+            "market": market,
+            "side": side.value,
+            "order_type": order_type.value,
+            "size_usd": size_usd,
+            "leverage": leverage,
+            "price": price,
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+        }
+        
+        # Sign the order
+        message = json.dumps(order_data, sort_keys=True).encode()
+        order_data["signature"] = self._sign_message(message)
+        
+        result = self._request("POST", "/v1/order", order_data)
+        
+        return TradeResult(
+            success=result.get("success", False),
+            order_id=result.get("order_id"),
+            tx_signature=result.get("tx_signature"),
+            message=result.get("message", "Unknown error"),
+            position=None,
+        )
     
-    def close_position(self, market: str, size_percent: float) -> TradeResult:
-        """平仓"""
-        try:
-            response = self.http.post(
-                f"{self.api_url}/order/close",
-                json={
-                    "agent_pubkey": str(self.pubkey),
-                    "market": market,
-                    "size_percent": size_percent,
-                }
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return TradeResult(
-                    success=True,
-                    order_id=result.get("order_id"),
-                    tx_signature=result.get("tx_signature"),
-                    message=f"平仓订单已提交: {market} {size_percent}%",
-                    position=None
-                )
-            else:
-                return TradeResult(
-                    success=False,
-                    order_id=None,
-                    tx_signature=None,
-                    message=f"平仓失败: {response.text}",
-                    position=None
-                )
-        except Exception as e:
-            return TradeResult(
-                success=False,
-                order_id=None, 
-                tx_signature=None,
-                message=f"错误: {str(e)}",
-                position=None
-            )
+    def close_position(self, market: str, size_percent: float = 100) -> TradeResult:
+        """Close a position."""
+        result = self._request("POST", "/v1/position/close", {
+            "market": market,
+            "size_percent": size_percent,
+        })
+        
+        return TradeResult(
+            success=result.get("success", False),
+            order_id=result.get("order_id"),
+            tx_signature=result.get("tx_signature"),
+            message=result.get("message", "Unknown error"),
+            position=None,
+        )
     
     def close_all_positions(self) -> TradeResult:
-        """平掉所有仓位"""
+        """Close all positions."""
         positions = self.get_positions()
         for pos in positions:
             self.close_position(pos.market, 100)
+        
         return TradeResult(
             success=True,
             order_id=None,
             tx_signature=None,
-            message=f"已提交平仓 {len(positions)} 个仓位",
-            position=None
+            message=f"Closed {len(positions)} positions",
+            position=None,
         )
     
     def modify_position(
@@ -221,188 +224,152 @@ class PerpDexClient:
         take_profit: Optional[float] = None,
         stop_loss: Optional[float] = None,
     ) -> TradeResult:
-        """修改持仓"""
-        try:
-            response = self.http.post(
-                f"{self.api_url}/position/modify",
-                json={
-                    "agent_pubkey": str(self.pubkey),
-                    "market": market,
-                    "new_leverage": new_leverage,
-                    "add_margin": add_margin,
-                    "take_profit": take_profit,
-                    "stop_loss": stop_loss,
-                }
-            )
-            return TradeResult(
-                success=response.status_code == 200,
-                order_id=None,
-                tx_signature=None,
-                message="持仓已修改" if response.status_code == 200 else response.text,
-                position=None
-            )
-        except Exception as e:
-            return TradeResult(
-                success=False,
-                order_id=None,
-                tx_signature=None,
-                message=f"错误: {str(e)}",
-                position=None
-            )
+        """Modify a position."""
+        result = self._request("PUT", "/v1/position/modify", {
+            "market": market,
+            "new_leverage": new_leverage,
+            "add_margin": add_margin,
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+        })
+        
+        return TradeResult(
+            success=result.get("success", False),
+            order_id=None,
+            tx_signature=None,
+            message=result.get("message", "Unknown error"),
+            position=None,
+        )
     
-    # ==================== 查询接口 ====================
+    # ==================== Queries ====================
     
     def get_account(self) -> AccountInfo:
-        """获取账户信息"""
-        try:
-            # 从链上读取 Agent 账户
-            response = self.solana.get_account_info(self._agent_pda)
-            if response.value:
-                # 解析账户数据
-                data = response.value.data
-                # 简化处理，实际需要按 Anchor 格式解析
-                return AccountInfo(
-                    agent_id=str(self._agent_pda),
-                    pubkey=str(self.pubkey),
-                    collateral=0,
-                    available_margin=0,
-                    total_position_value=0,
-                    total_unrealized_pnl=0,
-                    total_realized_pnl=0,
-                    positions=[],
-                    open_orders=[],
-                )
-        except Exception as e:
-            print(f"Failed to get account: {e}")
+        """Get account information."""
+        result = self._request("GET", "/v1/account", params={"pubkey": self.pubkey})
         
         return AccountInfo(
-            agent_id="",
-            pubkey=str(self.pubkey),
-            collateral=0,
-            available_margin=0,
-            total_position_value=0,
-            total_unrealized_pnl=0,
-            total_realized_pnl=0,
+            agent_id=result.get("agent_id", ""),
+            pubkey=self.pubkey,
+            collateral=result.get("collateral", 0),
+            available_margin=result.get("available_margin", 0),
+            total_position_value=result.get("total_position_value", 0),
+            total_unrealized_pnl=result.get("unrealized_pnl", 0),
+            total_realized_pnl=result.get("realized_pnl", 0),
             positions=[],
             open_orders=[],
         )
     
-    def get_positions(self) -> list[Position]:
-        """获取所有持仓"""
-        positions = []
-        for market_index in range(3):  # BTC, ETH, SOL
-            pos = self._get_position_from_chain(market_index)
-            if pos:
-                positions.append(pos)
-        return positions
-    
-    def _get_position_from_chain(self, market_index: int) -> Optional[Position]:
-        """从链上读取持仓"""
-        try:
-            pda = self._get_position_pda(market_index)
-            response = self.solana.get_account_info(pda)
-            if response.value and response.value.data:
-                # 解析持仓数据
-                # 实际需要按 Anchor 格式解析
-                return None  # 简化
-        except:
-            pass
-        return None
-    
-    def get_position(self, market: str) -> Optional[Position]:
-        """获取特定市场持仓"""
-        index = self._market_to_index(market)
-        return self._get_position_from_chain(index)
-    
-    def get_orders(self) -> list[Order]:
-        """获取未成交订单"""
-        try:
-            response = self.http.get(
-                f"{self.api_url}/orders",
-                params={"agent_pubkey": str(self.pubkey)}
-            )
-            if response.status_code == 200:
-                return [Order(**o) for o in response.json()]
-        except:
-            pass
+    def get_positions(self) -> List[Position]:
+        """Get all positions."""
+        result = self._request("GET", "/v1/positions", params={"pubkey": self.pubkey})
+        
+        if isinstance(result, list):
+            # Parse positions
+            positions = []
+            for p in result:
+                positions.append(Position(
+                    market=p["market"],
+                    side=Side(p["side"]),
+                    size=p.get("size", 0),
+                    size_usd=p.get("size_usd", 0),
+                    entry_price=p.get("entry_price", 0),
+                    mark_price=p.get("mark_price", 0),
+                    liquidation_price=p.get("liquidation_price", 0),
+                    margin=p.get("margin", 0),
+                    leverage=p.get("leverage", 1),
+                    unrealized_pnl=p.get("unrealized_pnl", 0),
+                    unrealized_pnl_percent=p.get("unrealized_pnl_pct", 0),
+                    opened_at=None,
+                ))
+            return positions
+        
         return []
     
-    def get_markets(self) -> list[Market]:
-        """获取所有市场"""
-        try:
-            response = self.http.get(f"{self.api_url}/markets")
-            if response.status_code == 200:
-                return [Market(**m) for m in response.json()]
-        except:
-            pass
+    def get_position(self, market: str) -> Optional[Position]:
+        """Get a specific position."""
+        result = self._request("GET", f"/v1/position/{market}")
         
-        # 返回默认市场
-        return [
-            Market(
-                symbol="BTC-PERP",
-                index=0,
-                base_asset="BTC",
-                price=97500,
-                index_price=97500,
-                funding_rate=0.0001,
-                open_interest=0,
-                volume_24h=0,
-            ),
-            Market(
-                symbol="ETH-PERP",
-                index=1,
-                base_asset="ETH",
-                price=2750,
-                index_price=2750,
-                funding_rate=0.0001,
-                open_interest=0,
-                volume_24h=0,
-            ),
-            Market(
-                symbol="SOL-PERP",
-                index=2,
-                base_asset="SOL",
-                price=195,
-                index_price=195,
-                funding_rate=0.0001,
-                open_interest=0,
-                volume_24h=0,
-            ),
-        ]
+        if result.get("success") is False or result.get("status_code") == 404:
+            return None
+        
+        return Position(
+            market=result.get("market", market),
+            side=Side(result.get("side", "long")),
+            size=result.get("size", 0),
+            size_usd=result.get("size_usd", 0),
+            entry_price=result.get("entry_price", 0),
+            mark_price=result.get("mark_price", 0),
+            liquidation_price=result.get("liquidation_price", 0),
+            margin=result.get("margin", 0),
+            leverage=result.get("leverage", 1),
+            unrealized_pnl=result.get("unrealized_pnl", 0),
+            unrealized_pnl_percent=result.get("unrealized_pnl_pct", 0),
+            opened_at=None,
+        )
+    
+    def get_orders(self) -> List[Order]:
+        """Get open orders."""
+        result = self._request("GET", "/v1/orders", params={"pubkey": self.pubkey})
+        
+        if isinstance(result, list):
+            return result  # TODO: Parse into Order objects
+        
+        return []
+    
+    def get_markets(self) -> List[Market]:
+        """Get all markets."""
+        result = self._request("GET", "/v1/markets")
+        
+        if isinstance(result, list):
+            markets = []
+            for m in result:
+                markets.append(Market(
+                    symbol=m["symbol"],
+                    index=m["index"],
+                    base_asset=m["base_asset"],
+                    price=m["price"],
+                    index_price=m.get("index_price", m["price"]),
+                    funding_rate=m.get("funding_rate", 0),
+                    open_interest=m.get("open_interest", 0),
+                    volume_24h=m.get("volume_24h", 0),
+                ))
+            return markets
+        
+        return []
     
     def get_price(self, market: str) -> float:
-        """获取市场价格"""
-        try:
-            response = self.http.get(f"{self.api_url}/price/{market}")
-            if response.status_code == 200:
-                return response.json()["price"]
-        except:
-            pass
-        
-        # 返回默认价格
-        prices = {"BTC-PERP": 97500, "ETH-PERP": 2750, "SOL-PERP": 195}
-        return prices.get(market, 0)
+        """Get market price."""
+        result = self._request("GET", f"/v1/price/{market}")
+        return result.get("price", 0)
     
-    # ==================== 资金管理 ====================
+    # ==================== Account Management ====================
     
     def deposit(self, amount: float) -> TradeResult:
-        """存入 USDC"""
-        # 实际需要调用链上 deposit 指令
+        """Deposit collateral."""
+        result = self._request("POST", "/v1/account/deposit", {
+            "amount": amount,
+            "tx_signature": "mock_deposit_tx",
+        })
+        
         return TradeResult(
-            success=True,
+            success=result.get("success", False),
             order_id=None,
             tx_signature=None,
-            message=f"已存入 ${amount}",
-            position=None
+            message=result.get("message", "Unknown error"),
+            position=None,
         )
     
     def withdraw(self, amount: float) -> TradeResult:
-        """提取 USDC"""
-        # 实际需要调用链上 withdraw 指令
+        """Withdraw collateral."""
+        result = self._request("POST", "/v1/account/withdraw", {
+            "amount": amount,
+            "destination": self.pubkey,
+        })
+        
         return TradeResult(
-            success=True,
+            success=result.get("success", False),
             order_id=None,
-            tx_signature=None,
-            message=f"已提取 ${amount}",
-            position=None
+            tx_signature=result.get("tx_signature"),
+            message=result.get("message", "Unknown error"),
+            position=None,
         )
