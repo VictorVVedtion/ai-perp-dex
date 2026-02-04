@@ -4,6 +4,7 @@ from .types import Side, TradeRequest, Quote, Position, Market
 from .client import Client
 from .trader import TradingAgent
 from .mm import MarketMaker
+from .prices import PriceFeed, fetch_live_prices
 
 __version__ = "0.1.0"
 __all__ = [
@@ -15,4 +16,6 @@ __all__ = [
     "Client",
     "TradingAgent",
     "MarketMaker",
+    "PriceFeed",
+    "fetch_live_prices",
 ]

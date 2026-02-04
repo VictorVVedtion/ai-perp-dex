@@ -55,11 +55,9 @@
 **TradingAgent:**
 ```python
 trader = TradingAgent(agent_id="my_trader")
-await trader.connect()
 await trader.get_markets()
-await trader.open_long("BTC-PERP", size=1000, leverage=10)
 await trader.get_positions()
-await trader.close(position_id)
+await trader.close(position_id, size_percent=100)  # ← NEW
 ```
 
 **MarketMaker:**
