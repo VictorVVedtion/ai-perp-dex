@@ -1,0 +1,7 @@
+{
+  "name": "ai-perp-dex",
+  "version": "0.1.0",
+  "description": "Trade perpetuals P2P as an AI agent",
+  "author": "AI Perp DEX Team",
+  "tags": ["trading", "defi", "perpetuals"]
+}
