@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::types::*;
+use crate::types::{AgentInfo, Market, Position, PositionStatus, PositionWithPnl, Side};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -190,6 +190,50 @@ impl Database {
         }
         
         Ok(positions)
+    }
+    
+    /// 查询历史仓位 (已平仓)，支持分页
+    pub fn get_closed_positions_by_agent(
+        &self, 
+        agent_id: &str, 
+        limit: u32, 
+        offset: u32
+    ) -> rusqlite::Result<(Vec<PositionWithPnl>, u32)> {
+        let conn = self.conn.lock().unwrap();
+        
+        // 获取总数
+        let total: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM positions WHERE (trader_agent = ?1 OR mm_agent = ?1) AND status = 'Closed'",
+            params![agent_id],
+            |row| row.get(0),
+        )?;
+        
+        // 查询分页数据
+        let mut stmt = conn.prepare(
+            "SELECT * FROM positions 
+             WHERE (trader_agent = ?1 OR mm_agent = ?1) AND status = 'Closed'
+             ORDER BY closed_at DESC
+             LIMIT ?2 OFFSET ?3"
+        )?;
+        
+        let mut positions = Vec::new();
+        let mut rows = stmt.query(params![agent_id, limit, offset])?;
+        
+        while let Some(row) = rows.next()? {
+            if let Ok(pos) = self.row_to_position(row) {
+                // 读取 PnL 字段
+                let pnl_trader: Option<f64> = row.get(16).ok();
+                let pnl_mm: Option<f64> = row.get(17).ok();
+                
+                positions.push(PositionWithPnl {
+                    position: pos,
+                    pnl_trader,
+                    pnl_mm,
+                });
+            }
+        }
+        
+        Ok((positions, total))
     }
     
     pub fn close_position(&self, position_id: &Uuid, pnl_trader: f64, pnl_mm: f64) -> rusqlite::Result<()> {

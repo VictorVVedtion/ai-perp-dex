@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -8,7 +8,11 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::types::*;
+use crate::types::{
+    AcceptQuote, AgentInfo, AgentPublicInfo, ApiResponse, ClosePosition, CreateQuote,
+    CreateTradeRequest, Market, MarketInfo, PaginatedResponse, PaginationParams, Position,
+    PositionWithPnl, Quote, RegisterAgent, TradeRequest,
+};
 
 /// POST /trade/request - 发起交易请求
 pub async fn create_trade_request(
@@ -110,6 +114,26 @@ pub async fn get_positions(
     Json(ApiResponse::ok(positions))
 }
 
+/// GET /positions/:agent_id/history - 获取 Agent 的历史仓位
+pub async fn get_position_history(
+    State(state): State<Arc<AppState>>,
+    Path(agent_id): Path<String>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<ApiResponse<PaginatedResponse<PositionWithPnl>>>, StatusCode> {
+    match state.get_closed_positions(&agent_id, params.limit, params.offset) {
+        Ok((positions, total)) => {
+            let response = PaginatedResponse {
+                items: positions,
+                total,
+                limit: params.limit,
+                offset: params.offset,
+            };
+            Ok(Json(ApiResponse::ok(response)))
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
 /// GET /requests - 获取所有活跃请求
 pub async fn get_requests(
     State(state): State<Arc<AppState>>,
@@ -202,4 +226,24 @@ pub async fn get_agent(
     } else {
         Err(StatusCode::NOT_FOUND)
     }
+}
+
+/// GET /positions/:agent_id/margin - 获取仓位保证金信息
+pub async fn get_positions_margin(
+    State(state): State<Arc<AppState>>,
+    Path(agent_id): Path<String>,
+) -> Json<ApiResponse<Vec<crate::margin::PositionMarginInfo>>> {
+    let config = crate::margin::MarginConfig::default();
+    let positions = state.get_agent_positions(&agent_id);
+    
+    let margin_infos: Vec<_> = positions
+        .iter()
+        .filter(|p| p.status == crate::types::PositionStatus::Active)
+        .map(|p| {
+            let current_price = state.prices.get(&p.market).map(|pr| *pr).unwrap_or(p.entry_price);
+            crate::margin::PositionMarginInfo::from_position(p, current_price, &config)
+        })
+        .collect();
+    
+    Json(ApiResponse::ok(margin_infos))
 }

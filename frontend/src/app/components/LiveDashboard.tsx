@@ -1,0 +1,146 @@
+'use client';
+
+import { useWebSocket, Trade } from '@/hooks/useWebSocket';
+import { Market, TradeRequest } from '@/lib/api';
+
+interface LiveDashboardProps {
+  initialMarkets: Market[];
+  initialRequests: TradeRequest[];
+}
+
+export default function LiveDashboard({ initialMarkets, initialRequests }: LiveDashboardProps) {
+  const { data, isConnected, error, reconnect } = useWebSocket({
+    markets: initialMarkets,
+    requests: initialRequests,
+  });
+
+  const { markets, requests, trades } = data;
+
+  // Calculate stats from live data
+  const stats = [
+    { label: 'Online Agents', value: '24', icon: '🤖', color: 'from-blue-500 to-cyan-500' },
+    { label: '24h Volume', value: `$${(markets.reduce((s, m) => s + m.volume24h, 0) / 1e6).toFixed(1)}M`, icon: '📊', color: 'from-green-500 to-emerald-500' },
+    { label: 'Active Requests', value: String(requests.length), icon: '⚡', color: 'from-orange-500 to-amber-500' },
+    { label: 'Open Interest', value: `$${(markets.reduce((s, m) => s + m.openInterest, 0) / 1e6).toFixed(1)}M`, icon: '🔒', color: 'from-purple-500 to-pink-500' },
+  ];
+
+  return (
+    <div className="space-y-8">
+      {/* Connection Status */}
+      <div className="flex items-center justify-between">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-sm">
+          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></span>
+          {isConnected ? 'Live' : 'Disconnected'}
+        </div>
+        {error && (
+          <button
+            onClick={reconnect}
+            className="text-sm text-red-400 hover:text-red-300 underline"
+          >
+            {error}
+          </button>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        {stats.map(s => (
+          <div key={s.label} className="glass-card p-5">
+            <span className={`w-10 h-10 rounded-xl bg-gradient-to-br ${s.color} flex items-center justify-center text-lg shadow-lg mb-3`}>
+              {s.icon}
+            </span>
+            <div className="text-2xl font-bold">{s.value}</div>
+            <div className="text-zinc-500 text-sm">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Markets */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            📈 Markets
+            {isConnected && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
+          </h2>
+          {markets.map(m => (
+            <div key={m.symbol} className="glass-card p-4 transition-all hover:scale-[1.02]">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold">{m.symbol}</span>
+                <span className={`text-xs px-2 py-1 rounded-full ${(m.change24h || 0) >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                  {(m.change24h || 0) >= 0 ? '+' : ''}{(m.change24h || 0).toFixed(1)}%
+                </span>
+              </div>
+              <div className="text-2xl font-bold font-mono">${m.price.toLocaleString()}</div>
+              <div className="text-zinc-500 text-sm mt-1">Vol: ${(m.volume24h / 1e6).toFixed(1)}M</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Live Requests & Trades */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Active Requests */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              ⚡ Live Requests
+              <span className="text-sm font-normal text-zinc-500">({requests.length})</span>
+            </h2>
+            <div className="glass-card divide-y divide-white/5 max-h-[300px] overflow-y-auto">
+              {requests.length === 0 ? (
+                <div className="p-6 text-center text-zinc-500">No active requests</div>
+              ) : (
+                requests.map(r => (
+                  <div key={r.id} className="p-4 flex justify-between items-center hover:bg-white/5 transition animate-in fade-in duration-300">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">🤖</div>
+                      <div>
+                        <div className="font-medium">{r.agentId}</div>
+                        <div className="text-sm text-zinc-500">
+                          <span className={r.side === 'LONG' ? 'text-green-400' : 'text-red-400'}>{r.side}</span> {r.market}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold">${r.size.toLocaleString()}</div>
+                      <div className="text-xs text-zinc-500">{r.leverage}x</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Recent Trades */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              🔥 Recent Trades
+              <span className="text-sm font-normal text-zinc-500">({trades.length})</span>
+            </h2>
+            <div className="glass-card divide-y divide-white/5 max-h-[250px] overflow-y-auto">
+              {trades.length === 0 ? (
+                <div className="p-6 text-center text-zinc-500">No recent trades</div>
+              ) : (
+                trades.slice(0, 10).map(t => (
+                  <div key={t.id} className="p-3 flex justify-between items-center hover:bg-white/5 transition">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-lg ${t.side === 'LONG' ? 'text-green-400' : 'text-red-400'}`}>
+                        {t.side === 'LONG' ? '📈' : '📉'}
+                      </span>
+                      <div>
+                        <div className="font-medium text-sm">{t.market}</div>
+                        <div className="text-xs text-zinc-500">{t.agentId}</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono text-sm">${t.price.toLocaleString()}</div>
+                      <div className="text-xs text-zinc-500">${t.size.toLocaleString()}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

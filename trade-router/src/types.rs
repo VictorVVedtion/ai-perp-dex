@@ -117,6 +117,35 @@ pub struct ClosePosition {
     pub size_percent: u8, // 1-100
 }
 
+/// 包含 PnL 的仓位信息
+#[derive(Debug, Clone, Serialize)]
+pub struct PositionWithPnl {
+    #[serde(flatten)]
+    pub position: Position,
+    pub pnl_trader: Option<f64>,
+    pub pnl_mm: Option<f64>,
+}
+
+/// 分页查询参数
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub offset: u32,
+}
+
+fn default_limit() -> u32 { 20 }
+
+/// 分页响应
+#[derive(Debug, Serialize)]
+pub struct PaginatedResponse<T> {
+    pub items: Vec<T>,
+    pub total: u32,
+    pub limit: u32,
+    pub offset: u32,
+}
+
 /// WebSocket 消息类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]

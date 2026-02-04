@@ -1,5 +1,8 @@
 use crate::db::Database;
-use crate::types::*;
+use crate::types::{
+    AgentInfo, Market, Position, PositionStatus, PositionWithPnl, Quote, Side, TradeRequest,
+    WsMessage,
+};
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -279,6 +282,17 @@ impl AppState {
         self.quotes.get(&request_id)
             .map(|q| q.clone())
             .unwrap_or_default()
+    }
+    
+    /// 获取 agent 的历史仓位 (已平仓)，支持分页
+    pub fn get_closed_positions(
+        &self, 
+        agent_id: &str, 
+        limit: u32, 
+        offset: u32
+    ) -> Result<(Vec<PositionWithPnl>, u32), String> {
+        self.db.get_closed_positions_by_agent(agent_id, limit, offset)
+            .map_err(|e| format!("Database error: {}", e))
     }
 }
 
