@@ -49,6 +49,7 @@ async fn main() {
         .route("/trade/close", post(handlers::close_position))
         // 查询 API
         .route("/positions/:agent_id", get(handlers::get_positions))
+        .route("/positions/:agent_id/margin", get(handlers::get_positions_margin))
         .route("/positions/:agent_id/history", get(handlers::get_position_history))
         .route("/requests", get(handlers::get_requests))
         .route("/quotes/:request_id", get(handlers::get_quotes))
