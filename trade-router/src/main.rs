@@ -1,5 +1,6 @@
 mod db;
 mod handlers;
+mod middleware;
 mod state;
 mod types;
 mod websocket;
@@ -7,6 +8,7 @@ mod websocket;
 use axum::{
     routing::{get, post},
     Router,
+    middleware as axum_middleware,
 };
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -14,6 +16,7 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::state::AppState;
+use crate::middleware::auth_middleware;
 
 #[tokio::main]
 async fn main() {
@@ -51,6 +54,7 @@ async fn main() {
         // WebSocket
         .route("/ws", get(websocket::ws_handler))
         // 中间件
+        .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware))
         .layer(cors)
         .with_state(state);
 

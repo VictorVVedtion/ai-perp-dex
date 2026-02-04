@@ -26,7 +26,11 @@ class Client:
         self.agent_id = agent_id
         self.api_key = api_key
         self.timeout = timeout
-        self._http = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
+        # Build headers with API key if provided
+        headers = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+        self._http = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, headers=headers)
         self._ws: Optional[WebSocketClientProtocol] = None
         self._ws_handlers: List[Callable[[WebSocketMessage], Any]] = []
         self._ws_task: Optional[asyncio.Task] = None
@@ -62,6 +66,8 @@ class Client:
         if data.get("success") and data.get("data"):
             # Store API key for future requests
             self.api_key = data["data"].get("api_key")
+            # Update client headers
+            self._http.headers["X-API-Key"] = self.api_key
         
         return data
     
