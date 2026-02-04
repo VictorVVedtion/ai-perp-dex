@@ -65,17 +65,23 @@ pub fn should_liquidate(position: &Position, current_price: f64, config: &Margin
 /// Calculate liquidation price
 pub fn liquidation_price(position: &Position, config: &MarginConfig) -> f64 {
     let maint_margin = maintenance_margin(position.trader_collateral, config);
-    // Equity = collateral + pnl = maint_margin (at liquidation)
-    // pnl = maint_margin - collateral
+    // At liquidation: equity = maint_margin
+    // equity = collateral + pnl
+    // pnl = maint_margin - collateral (negative for liquidation)
     let pnl_at_liq = maint_margin - position.trader_collateral;
     
-    // For long: pnl = size * leverage * (price - entry) / entry
-    // price = entry * (1 + pnl / (size * leverage))
-    let factor = pnl_at_liq / (position.size_usdc * position.leverage as f64 / position.entry_price);
+    // pnl = size * (price - entry) / entry * leverage
+    // Solve for price:
+    // pnl * entry / (size * leverage) = price - entry
+    // price = entry + pnl * entry / (size * leverage)
+    let notional = position.size_usdc;
+    let price_change = pnl_at_liq * position.entry_price / notional;
     
     match position.side {
-        Side::Long => position.entry_price * (1.0 + factor),
-        Side::Short => position.entry_price * (1.0 - factor),
+        // Long loses when price drops
+        Side::Long => position.entry_price + price_change,
+        // Short loses when price rises
+        Side::Short => position.entry_price - price_change,
     }
 }
 
