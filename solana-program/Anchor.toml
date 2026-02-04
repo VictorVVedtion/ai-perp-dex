@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-ai_perp_dex = "CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6"
+ai_perp_dex = "AHjGBth6uAKVipLGnooZ9GYn7vwSKPJLX4Lq7Hio3CjT"
 
 [programs.devnet]
-ai_perp_dex = "CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6"
+ai_perp_dex = "AHjGBth6uAKVipLGnooZ9GYn7vwSKPJLX4Lq7Hio3CjT"
 
 [registry]
 url = "https://api.apr.dev"
