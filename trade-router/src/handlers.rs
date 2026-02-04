@@ -287,3 +287,51 @@ pub async fn get_positions_margin(
     
     Json(ApiResponse::ok(margin_infos))
 }
+
+/// POST /agents/:agent_id/limits - 设置 Agent 风险限额
+pub async fn set_agent_limits(
+    State(state): State<Arc<AppState>>,
+    Path(agent_id): Path<String>,
+    Json(input): Json<SetRiskLimits>,
+) -> Result<Json<ApiResponse<RiskLimits>>, StatusCode> {
+    // 检查 Agent 是否存在
+    if state.get_agent(&agent_id).is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    
+    // 获取当前限额或使用默认值
+    let mut limits = state.get_agent_limits(&agent_id);
+    
+    // 更新提供的字段
+    if let Some(v) = input.max_position_size {
+        limits.max_position_size = v;
+    }
+    if let Some(v) = input.max_leverage {
+        limits.max_leverage = v;
+    }
+    if let Some(v) = input.max_total_exposure {
+        limits.max_total_exposure = v;
+    }
+    if let Some(v) = input.daily_loss_limit {
+        limits.daily_loss_limit = v;
+    }
+    
+    // 保存
+    state.set_agent_limits(&agent_id, limits.clone());
+    
+    Ok(Json(ApiResponse::ok(limits)))
+}
+
+/// GET /agents/:agent_id/limits - 获取 Agent 风险限额
+pub async fn get_agent_limits(
+    State(state): State<Arc<AppState>>,
+    Path(agent_id): Path<String>,
+) -> Result<Json<ApiResponse<RiskLimits>>, StatusCode> {
+    // 检查 Agent 是否存在
+    if state.get_agent(&agent_id).is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    
+    let limits = state.get_agent_limits(&agent_id);
+    Ok(Json(ApiResponse::ok(limits)))
+}

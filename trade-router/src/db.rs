@@ -431,6 +431,9 @@ fn parse_market(s: &str) -> Market {
         "BtcPerp" | "BTC-PERP" => Market::BtcPerp,
         "EthPerp" | "ETH-PERP" => Market::EthPerp,
         "SolPerp" | "SOL-PERP" => Market::SolPerp,
+        "DogePerp" | "DOGE-PERP" => Market::DogePerp,
+        "AvaxPerp" | "AVAX-PERP" => Market::AvaxPerp,
+        "LinkPerp" | "LINK-PERP" => Market::LinkPerp,
         _ => Market::BtcPerp,
     }
 }

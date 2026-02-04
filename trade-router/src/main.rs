@@ -47,6 +47,15 @@ async fn main() {
         ).await;
     });
 
+    // 启动 Funding 结算引擎 (每8小时)
+    let funding_state = state.clone();
+    tokio::spawn(async move {
+        funding::start_funding_engine(
+            funding_state,
+            funding::FundingConfig::default(),
+        ).await;
+    });
+
     // CORS 配置
     let cors = CorsLayer::new()
         .allow_origin(Any)
