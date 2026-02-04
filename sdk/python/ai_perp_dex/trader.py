@@ -244,3 +244,83 @@ class TradingAgent:
             Close result with PnL info
         """
         return await self._client.close_position(position_id, size_percent)
+    
+    # ========== Simple Trading Interface ==========
+    
+    async def long(
+        self,
+        market: str,
+        size: float,
+        leverage: int = 1,
+        max_wait_secs: float = 10,
+    ) -> "Position":
+        """
+        Open a long position - simple one-liner interface.
+        
+        This will:
+        1. Create a trade request
+        2. Wait for MM quotes
+        3. Accept the best quote
+        4. Return the opened position
+        
+        Args:
+            market: Market symbol (e.g., "BTC-PERP")
+            size: Size in USDC
+            leverage: Leverage (1-20)
+            max_wait_secs: Max time to wait for quotes
+        
+        Returns:
+            The opened Position
+            
+        Example:
+            pos = await trader.long("BTC-PERP", 500, leverage=5)
+        """
+        return await self._execute_trade(market, "long", size, leverage, max_wait_secs)
+    
+    async def short(
+        self,
+        market: str,
+        size: float,
+        leverage: int = 1,
+        max_wait_secs: float = 10,
+    ) -> "Position":
+        """Open a short position - simple one-liner interface."""
+        return await self._execute_trade(market, "short", size, leverage, max_wait_secs)
+    
+    async def _execute_trade(
+        self,
+        market: str,
+        side: str,
+        size: float,
+        leverage: int,
+        max_wait_secs: float,
+    ) -> "Position":
+        """Execute a trade end-to-end"""
+        import asyncio
+        
+        # 1. Create request
+        request = await self._client.create_request(
+            market=market,
+            side=side,
+            size_usdc=size,
+            leverage=leverage,
+        )
+        
+        # 2. Wait for quotes
+        start = asyncio.get_event_loop().time()
+        quotes = []
+        
+        while asyncio.get_event_loop().time() - start < max_wait_secs:
+            quotes = await self._client.get_quotes(request.id)
+            if quotes:
+                break
+            await asyncio.sleep(0.5)
+        
+        if not quotes:
+            raise TimeoutError(f"No quotes received within {max_wait_secs}s")
+        
+        # 3. Accept best quote (lowest funding rate)
+        best = min(quotes, key=lambda q: q.funding_rate)
+        position = await self._client.accept_quote(best.id, request_id=request.id)
+        
+        return position

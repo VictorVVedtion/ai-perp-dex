@@ -1,6 +1,7 @@
 mod db;
 mod handlers;
 mod liquidation;
+mod price_feed;
 mod margin;
 mod middleware;
 mod state;
@@ -29,6 +30,12 @@ async fn main() {
 
     // 创建共享状态
     let state = Arc::new(AppState::new());
+
+    // 启动价格更新 (每30秒)
+    let price_state = state.clone();
+    tokio::spawn(async move {
+        price_feed::start_price_feed(price_state, 30).await;
+    });
 
     // 启动强平引擎 (后台任务)
     let liq_state = state.clone();
