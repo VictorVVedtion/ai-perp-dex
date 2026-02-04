@@ -1,4 +1,5 @@
 use crate::db::Database;
+use crate::settlement::SettlementClient;
 use crate::types::{
     AgentInfo, AgentStats, Market, Position, PositionStatus, PositionWithPnl, Quote, RiskLimits,
     Side, TradeRequest, WsMessage,
@@ -31,6 +32,8 @@ pub struct AppState {
     pub agent_limits: Arc<DashMap<String, RiskLimits>>,
     /// SQLite 数据库
     pub db: Arc<Database>,
+    /// 链上结算客户端
+    pub settlement: SettlementClient,
 }
 
 impl AppState {
@@ -58,6 +61,7 @@ impl AppState {
             api_keys: Arc::new(DashMap::new()),
             agent_limits: Arc::new(DashMap::new()),
             db: Arc::new(db),
+            settlement: SettlementClient::new(),
         };
         
         // 初始化模拟价格

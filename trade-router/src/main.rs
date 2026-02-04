@@ -7,6 +7,7 @@ mod demo_mm;
 mod incentives;
 mod margin;
 mod middleware;
+mod settlement;
 mod state;
 mod types;
 mod websocket;

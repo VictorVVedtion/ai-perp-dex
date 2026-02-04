@@ -84,7 +84,31 @@ pub async fn accept_quote(
     Json(input): Json<AcceptQuote>,
 ) -> Result<Json<ApiResponse<Position>>, (StatusCode, Json<ApiResponse<()>>)> {
     match state.accept_quote(input.request_id, input.quote_id) {
-        Ok(position) => Ok(Json(ApiResponse::ok(position))),
+        Ok(position) => {
+            // 链上结算 (异步，不阻塞响应)
+            let settlement = state.settlement.clone();
+            let market = format!("{:?}", position.market);
+            let trader = position.trader_agent.clone();
+            let size = (position.size_usdc * 1000.0) as i64; // Convert to contract units
+            let price = position.entry_price;
+            
+            tokio::spawn(async move {
+                match settlement.settle_open_position(&trader, &market, size, price).await {
+                    Ok(resp) => {
+                        if resp.success {
+                            tracing::info!("Position settled on-chain: {:?}", resp.signature);
+                        } else {
+                            tracing::warn!("On-chain settlement failed: {:?}", resp.error);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Settlement service error: {}", e);
+                    }
+                }
+            });
+            
+            Ok(Json(ApiResponse::ok(position)))
+        }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(ApiResponse::err(e)),
@@ -97,8 +121,35 @@ pub async fn close_position(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ClosePosition>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, (StatusCode, Json<ApiResponse<()>>)> {
+    // 先获取仓位信息用于结算
+    let position_info = state.positions.get(&input.position_id)
+        .map(|p| (p.trader_agent.clone(), format!("{:?}", p.market)));
+    
     match state.close_position(input.position_id, &input.agent_id) {
         Ok((pnl_trader, pnl_mm)) => {
+            // 链上平仓结算 (异步)
+            if let Some((trader, market)) = position_info {
+                let settlement = state.settlement.clone();
+                let current_price = state.prices.get(&crate::types::Market::BtcPerp)
+                    .map(|p| *p)
+                    .unwrap_or(97000.0);
+                
+                tokio::spawn(async move {
+                    match settlement.settle_close_position(&trader, &market, current_price).await {
+                        Ok(resp) => {
+                            if resp.success {
+                                tracing::info!("Close settled on-chain: {:?}", resp.signature);
+                            } else {
+                                tracing::warn!("On-chain close settlement failed: {:?}", resp.error);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Settlement service error: {}", e);
+                        }
+                    }
+                });
+            }
+            
             let data = serde_json::json!({
                 "position_id": input.position_id,
                 "pnl_trader": pnl_trader,
