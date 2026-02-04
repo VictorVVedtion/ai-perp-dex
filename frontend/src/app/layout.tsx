@@ -1,30 +1,25 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-import { WalletContextProvider } from "./providers";
-import { Header } from "@/components/Header";
+import Link from "next/link";
 
-const inter = Inter({
-  subsets: ["latin"],
-});
+export const metadata = { title: "AI Perp DEX" };
 
-export const metadata: Metadata = {
-  title: "AI Perp DEX",
-  description: "AI-Powered Perpetual Futures DEX on Solana",
-};
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-gray-900 text-white min-h-screen`}>
-        <WalletContextProvider>
-          <Header />
-          <main>{children}</main>
-        </WalletContextProvider>
+      <body className="text-white antialiased">
+        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-black/60 backdrop-blur-xl">
+          <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-2 font-bold">
+              <span className="text-2xl">⚡</span> AI Perp DEX
+            </Link>
+            <div className="flex gap-6 text-sm text-zinc-400">
+              <Link href="/" className="hover:text-white">Dashboard</Link>
+              <Link href="/agents" className="hover:text-white">Agents</Link>
+              <Link href="/markets" className="hover:text-white">Markets</Link>
+            </div>
+          </div>
+        </nav>
+        <main className="pt-20 pb-12 px-6 max-w-6xl mx-auto">{children}</main>
       </body>
     </html>
   );
