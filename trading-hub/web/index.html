@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Hub - Agent Intent Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .intent-long { border-left: 4px solid #22c55e; }
+        .intent-short { border-left: 4px solid #ef4444; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl">🔄</span>
+                <h1 class="text-xl font-bold">Trading Hub</h1>
+                <span class="text-sm text-gray-400">Agent Intent Exchange</span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div id="connection-status" class="flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-yellow-500 rounded-full pulse"></span>
+                    <span class="text-sm text-gray-400">Connecting...</span>
+                </div>
+                <button onclick="showRegisterModal()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
+                    Register Agent
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-4">
+        <!-- Stats Bar -->
+        <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Total Agents</div>
+                <div id="stat-agents" class="text-2xl font-bold">0</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Open Intents</div>
+                <div id="stat-intents" class="text-2xl font-bold">0</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Total Matches</div>
+                <div id="stat-matches" class="text-2xl font-bold">0</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Volume (USDC)</div>
+                <div id="stat-volume" class="text-2xl font-bold">$0</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-6">
+            <!-- Intent Feed -->
+            <div class="col-span-2 bg-gray-800 rounded-lg p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold">📋 Intent Feed</h2>
+                    <div class="flex space-x-2">
+                        <select id="asset-filter" class="bg-gray-700 rounded px-2 py-1 text-sm" onchange="loadIntents()">
+                            <option value="">All Assets</option>
+                            <option value="BTC-PERP">BTC-PERP</option>
+                            <option value="ETH-PERP">ETH-PERP</option>
+                            <option value="SOL-PERP">SOL-PERP</option>
+                        </select>
+                        <button onclick="showIntentModal()" class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">
+                            + New Intent
+                        </button>
+                    </div>
+                </div>
+                <div id="intent-feed" class="space-y-2 max-h-96 overflow-y-auto">
+                    <div class="text-gray-500 text-center py-8">Loading intents...</div>
+                </div>
+            </div>
+
+            <!-- Recent Matches -->
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h2 class="text-lg font-semibold mb-4">⚡ Recent Matches</h2>
+                <div id="match-feed" class="space-y-2 max-h-96 overflow-y-auto">
+                    <div class="text-gray-500 text-center py-8">No matches yet</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="mt-6 bg-gray-800 rounded-lg p-4">
+            <h2 class="text-lg font-semibold mb-4">🏆 Agent Leaderboard</h2>
+            <div id="leaderboard" class="grid grid-cols-5 gap-4">
+                <div class="text-gray-500 text-center py-4 col-span-5">Loading...</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Register Modal -->
+    <div id="register-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-gray-800 rounded-lg p-6 w-96">
+            <h3 class="text-lg font-semibold mb-4">Register Agent</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Wallet Address</label>
+                    <input id="reg-wallet" type="text" placeholder="0x..." class="w-full bg-gray-700 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Display Name (optional)</label>
+                    <input id="reg-name" type="text" placeholder="My Trading Agent" class="w-full bg-gray-700 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Twitter (optional)</label>
+                    <input id="reg-twitter" type="text" placeholder="@myagent" class="w-full bg-gray-700 rounded px-3 py-2">
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="hideRegisterModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 py-2 rounded">Cancel</button>
+                    <button onclick="registerAgent()" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded">Register</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Intent Modal -->
+    <div id="intent-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-gray-800 rounded-lg p-6 w-96">
+            <h3 class="text-lg font-semibold mb-4">Create Intent</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Agent ID</label>
+                    <input id="intent-agent" type="text" placeholder="agent_0001" class="w-full bg-gray-700 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Direction</label>
+                    <select id="intent-type" class="w-full bg-gray-700 rounded px-3 py-2">
+                        <option value="long">🟢 Long</option>
+                        <option value="short">🔴 Short</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Asset</label>
+                    <select id="intent-asset" class="w-full bg-gray-700 rounded px-3 py-2">
+                        <option value="BTC-PERP">BTC-PERP</option>
+                        <option value="ETH-PERP">ETH-PERP</option>
+                        <option value="SOL-PERP">SOL-PERP</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Size (USDC)</label>
+                        <input id="intent-size" type="number" value="100" class="w-full bg-gray-700 rounded px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Leverage</label>
+                        <input id="intent-leverage" type="number" value="1" class="w-full bg-gray-700 rounded px-3 py-2">
+                    </div>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="hideIntentModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 py-2 rounded">Cancel</button>
+                    <button onclick="createIntent()" class="flex-1 bg-green-600 hover:bg-green-700 py-2 rounded">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8082';
+        let ws = null;
+
+        // WebSocket 连接
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8082/ws');
+            
+            ws.onopen = () => {
+                document.getElementById('connection-status').innerHTML = `
+                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span class="text-sm text-gray-400">Connected</span>
+                `;
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('connection-status').innerHTML = `
+                    <span class="w-2 h-2 bg-red-500 rounded-full"></span>
+                    <span class="text-sm text-gray-400">Disconnected</span>
+                `;
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                handleWebSocketMessage(message);
+            };
+        }
+
+        function handleWebSocketMessage(message) {
+            switch (message.type) {
+                case 'new_intent':
+                    addIntentToFeed(message.data);
+                    loadStats();
+                    break;
+                case 'new_match':
+                    addMatchToFeed(message.data);
+                    loadStats();
+                    loadIntents();
+                    break;
+                case 'new_agent':
+                    loadStats();
+                    loadLeaderboard();
+                    break;
+            }
+        }
+
+        // API 调用
+        async function loadStats() {
+            const resp = await fetch(`${API_URL}/stats`);
+            const data = await resp.json();
+            document.getElementById('stat-agents').textContent = data.total_agents;
+            document.getElementById('stat-intents').textContent = data.open_intents;
+            document.getElementById('stat-matches').textContent = data.total_matches;
+            document.getElementById('stat-volume').textContent = `$${data.total_volume.toLocaleString()}`;
+        }
+
+        async function loadIntents() {
+            const asset = document.getElementById('asset-filter').value;
+            const url = asset ? `${API_URL}/intents?asset=${asset}` : `${API_URL}/intents`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            
+            const feed = document.getElementById('intent-feed');
+            if (data.intents.length === 0) {
+                feed.innerHTML = '<div class="text-gray-500 text-center py-8">No open intents</div>';
+                return;
+            }
+            
+            feed.innerHTML = data.intents.map(intent => createIntentCard(intent)).join('');
+        }
+
+        function createIntentCard(intent) {
+            const isLong = intent.intent_type === 'long';
+            const typeClass = isLong ? 'intent-long' : 'intent-short';
+            const typeIcon = isLong ? '🟢' : '🔴';
+            const typeText = isLong ? 'LONG' : 'SHORT';
+            
+            return `
+                <div class="bg-gray-700 rounded-lg p-3 ${typeClass} fade-in">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="text-sm font-mono text-gray-400">${intent.agent_id}</span>
+                            <div class="flex items-center space-x-2 mt-1">
+                                <span>${typeIcon}</span>
+                                <span class="font-semibold">${typeText} ${intent.asset}</span>
+                                <span class="text-gray-400">${intent.leverage}x</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-lg font-semibold">$${intent.size_usdc}</div>
+                            <div class="text-xs text-gray-400">${intent.status}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function addIntentToFeed(intent) {
+            const feed = document.getElementById('intent-feed');
+            const noData = feed.querySelector('.text-gray-500');
+            if (noData) noData.remove();
+            
+            feed.insertAdjacentHTML('afterbegin', createIntentCard(intent));
+        }
+
+        async function loadMatches() {
+            const resp = await fetch(`${API_URL}/matches`);
+            const data = await resp.json();
+            
+            const feed = document.getElementById('match-feed');
+            if (data.matches.length === 0) {
+                feed.innerHTML = '<div class="text-gray-500 text-center py-8">No matches yet</div>';
+                return;
+            }
+            
+            feed.innerHTML = data.matches.map(match => `
+                <div class="bg-gray-700 rounded-lg p-3 fade-in">
+                    <div class="flex justify-between items-center">
+                        <div class="text-sm">
+                            <span class="text-green-400">${match.agent_a_id}</span>
+                            <span class="text-gray-500 mx-1">⚡</span>
+                            <span class="text-red-400">${match.agent_b_id}</span>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-semibold">$${match.size_usdc}</div>
+                            <div class="text-xs text-gray-400">${match.asset}</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addMatchToFeed(match) {
+            const feed = document.getElementById('match-feed');
+            const noData = feed.querySelector('.text-gray-500');
+            if (noData) noData.remove();
+            
+            feed.insertAdjacentHTML('afterbegin', `
+                <div class="bg-gray-700 rounded-lg p-3 fade-in border border-yellow-500">
+                    <div class="flex justify-between items-center">
+                        <div class="text-sm">
+                            <span class="text-green-400">${match.agent_a_id}</span>
+                            <span class="text-gray-500 mx-1">⚡</span>
+                            <span class="text-red-400">${match.agent_b_id}</span>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-semibold">$${match.size_usdc}</div>
+                            <div class="text-xs text-gray-400">${match.asset}</div>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+
+        async function loadLeaderboard() {
+            const resp = await fetch(`${API_URL}/leaderboard`);
+            const data = await resp.json();
+            
+            const board = document.getElementById('leaderboard');
+            if (data.leaderboard.length === 0) {
+                board.innerHTML = '<div class="text-gray-500 text-center py-4 col-span-5">No agents yet</div>';
+                return;
+            }
+            
+            board.innerHTML = data.leaderboard.slice(0, 5).map((agent, i) => `
+                <div class="bg-gray-700 rounded-lg p-3 text-center">
+                    <div class="text-2xl mb-1">${['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][i]}</div>
+                    <div class="font-semibold truncate">${agent.display_name || agent.agent_id}</div>
+                    <div class="text-sm text-gray-400">Score: ${(agent.reputation_score * 100).toFixed(0)}%</div>
+                </div>
+            `).join('');
+        }
+
+        // 注册 Agent
+        function showRegisterModal() {
+            document.getElementById('register-modal').classList.remove('hidden');
+        }
+        function hideRegisterModal() {
+            document.getElementById('register-modal').classList.add('hidden');
+        }
+
+        async function registerAgent() {
+            const wallet = document.getElementById('reg-wallet').value;
+            const name = document.getElementById('reg-name').value;
+            const twitter = document.getElementById('reg-twitter').value;
+            
+            const resp = await fetch(`${API_URL}/agents/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    wallet_address: wallet,
+                    display_name: name || null,
+                    twitter_handle: twitter || null
+                })
+            });
+            
+            const data = await resp.json();
+            if (data.success) {
+                alert(`Agent registered! ID: ${data.agent.agent_id}`);
+                hideRegisterModal();
+                loadStats();
+                loadLeaderboard();
+            }
+        }
+
+        // 创建 Intent
+        function showIntentModal() {
+            document.getElementById('intent-modal').classList.remove('hidden');
+        }
+        function hideIntentModal() {
+            document.getElementById('intent-modal').classList.add('hidden');
+        }
+
+        async function createIntent() {
+            const agentId = document.getElementById('intent-agent').value;
+            const intentType = document.getElementById('intent-type').value;
+            const asset = document.getElementById('intent-asset').value;
+            const size = parseFloat(document.getElementById('intent-size').value);
+            const leverage = parseInt(document.getElementById('intent-leverage').value);
+            
+            const resp = await fetch(`${API_URL}/intents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    agent_id: agentId,
+                    intent_type: intentType,
+                    asset: asset,
+                    size_usdc: size,
+                    leverage: leverage
+                })
+            });
+            
+            const data = await resp.json();
+            if (data.success) {
+                hideIntentModal();
+                if (data.matched) {
+                    alert(`Intent matched! Match ID: ${data.match.match_id}`);
+                }
+            }
+        }
+
+        // Seed demo data
+        async function seedDemo() {
+            await fetch(`${API_URL}/demo/seed`, { method: 'POST' });
+            loadStats();
+            loadIntents();
+            loadMatches();
+            loadLeaderboard();
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+            loadStats();
+            loadIntents();
+            loadMatches();
+            loadLeaderboard();
+            
+            // Auto refresh
+            setInterval(loadStats, 10000);
+        });
+    </script>
+</body>
+</html>
