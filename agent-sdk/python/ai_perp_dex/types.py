@@ -11,6 +11,13 @@ class Side(Enum):
     SHORT = "short"
 
 
+class MarketSymbol(Enum):
+    """Market symbols for P2P trading."""
+    BTC_PERP = "BTC-PERP"
+    ETH_PERP = "ETH-PERP"
+    SOL_PERP = "SOL-PERP"
+
+
 class OrderType(Enum):
     MARKET = "market"
     LIMIT = "limit"

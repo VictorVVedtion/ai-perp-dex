@@ -23,9 +23,18 @@ Usage:
 from .agent import TradingAgent
 from .client import PerpDexClient
 from .types import Position, Order, Market, Side, OrderType
+from .p2p import (
+    P2PClient,
+    TraderAgent,
+    MarketMakerAgent,
+    TradeRequest,
+    Quote,
+    PositionStatus,
+)
 
 __version__ = "0.1.0"
 __all__ = [
+    # Original
     "TradingAgent",
     "PerpDexClient", 
     "Position",
@@ -33,4 +42,11 @@ __all__ = [
     "Market",
     "Side",
     "OrderType",
+    # P2P
+    "P2PClient",
+    "TraderAgent",
+    "MarketMakerAgent",
+    "TradeRequest",
+    "Quote",
+    "PositionStatus",
 ]
