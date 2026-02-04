@@ -1,167 +1,209 @@
 # AI Perp DEX 🤖📈
 
-**AI-Native 永续合约交易所** - 专为 AI Agent 设计的衍生品交易平台。
+**AI-Native 永续合约交易所** - Agent-to-Agent P2P 交易平台。
 
-> 不是给人用的网页，是给 AI Agent 调用的 API。
+> v2: 不需要订单簿，Agent 互为对手方，直接撮合。
 
 ## 🎯 核心理念
 
-传统 DEX 是给人用的 —— 连接钱包、点按钮、确认交易。
+**Agent 本身就是流动性**
 
-AI Perp DEX 是给 Agent 用的 —— API 调用、Keypair 签名、自动执行。
+传统 DEX 需要 LP 池或订单簿。AI Perp DEX v2 让 AI Agent 直接互相交易：
 
 ```
-┌─────────────────────────────────────────────────┐
-│              AI Perp DEX                        │
-│                                                 │
-│   AI Agent A ──┐                                │
-│                │    ┌──────────────┐            │
-│   AI Agent B ──┼───▶│  Matching    │───▶ Solana │
-│                │    │  Engine API  │    Settlement
-│   AI Agent C ──┘    └──────────────┘            │
-│                                                 │
-│   人类只是观察者，不是交易入口                    │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                    AI Perp DEX v2                    │
+│                                                      │
+│  ┌─────────────┐    ┌─────────────┐    ┌───────────┐│
+│  │  Trader A   │    │  MM Agent   │    │ MM Agent  ││
+│  │  (Long BTC) │    │  (Quotes)   │    │ (Quotes)  ││
+│  └──────┬──────┘    └──────┬──────┘    └─────┬─────┘│
+│         │                  │                 │      │
+│         └──────────┬───────┴─────────────────┘      │
+│                    ▼                                │
+│         ┌────────────────────────┐                  │
+│         │    Trade Router        │ ← WebSocket 广播 │
+│         │    (Rust Server)       │                  │
+│         └───────────┬────────────┘                  │
+│                     ▼                               │
+│         ┌────────────────────────┐                  │
+│         │   Solana Escrow        │ ← 保证金锁定     │
+│         │   Program              │ ← 自动结算       │
+│         └────────────────────────┘                  │
+│                                                     │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Quick Start
 
-### Python SDK
-
-```python
-from ai_perp_dex import TradingAgent
-
-# 初始化 Agent
-agent = TradingAgent(keypair_path="~/.config/solana/agent.json")
-
-# 自然语言交易
-agent.execute("开 BTC 多单 $100, 10倍杠杆")
-
-# 或者结构化 API
-agent.open_position(
-    market="BTC-PERP",
-    side="long",
-    size_usd=100,
-    leverage=10
-)
-
-# 查看持仓
-positions = agent.get_positions()
-for pos in positions:
-    print(f"{pos.market}: {pos.side} ${pos.size_usd} PnL: {pos.unrealized_pnl}")
-```
-
-### REST API
+### 1. 启动 Trade Router
 
 ```bash
-# 提交订单
-curl -X POST http://api.ai-perp-dex.io/order/submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_pubkey": "YOUR_PUBKEY",
-    "market": "BTC-PERP",
-    "side": "long",
-    "size_usd": 100,
-    "leverage": 10,
-    "order_type": "market",
-    "signature": "SIGNED_MESSAGE"
-  }'
-
-# 查看市场
-curl http://api.ai-perp-dex.io/markets
-
-# 查看价格
-curl http://api.ai-perp-dex.io/price/BTC-PERP
+cd trade-router
+cargo run
+# 🚀 Trade Router starting on 0.0.0.0:8080
+# 📡 WebSocket endpoint: ws://0.0.0.0:8080/ws
 ```
 
-## 📦 架构
+### 2. 运行做市商 Agent
+
+```bash
+cd mm-agents
+python conservative_mm.py
+# 🤖 Conservative Market Maker Agent
+# 🔄 Listening for trade requests...
+```
+
+### 3. 使用 Python SDK 交易
+
+```python
+from ai_perp_dex import P2PClient, TraderAgent
+from ai_perp_dex.types import MarketSymbol as Market, Side
+
+async with P2PClient(agent_id="my_trader") as client:
+    trader = TraderAgent(client)
+    
+    # 开 BTC 多单，自动获取最优报价
+    position = await trader.open_position(
+        market=Market.BTC_PERP,
+        side=Side.LONG,
+        size_usdc=100.0,
+        leverage=10,
+        max_funding_rate=0.01
+    )
+    
+    print(f"Position opened: {position.id}")
+    print(f"Entry price: ${position.entry_price}")
+```
+
+## 📦 项目结构
 
 ```
 ai-perp-dex/
-├── matching-engine/     # Rust 撮合引擎
+├── trade-router/        # Rust P2P 交易路由
 │   └── src/
-│       ├── engine.rs    # 核心撮合逻辑
-│       ├── orderbook.rs # 订单簿
-│       ├── rest_api.rs  # Agent API
-│       └── risk.rs      # 风控
+│       ├── main.rs      # 入口
+│       ├── handlers.rs  # REST API
+│       ├── websocket.rs # WS 广播
+│       ├── state.rs     # 状态管理
+│       └── types.rs     # 类型定义
 │
-├── solana-program/      # 链上结算程序
-│   └── programs/ai-perp-dex/
+├── escrow-program/      # Solana Anchor 合约
+│   └── programs/escrow/
 │       └── src/
-│           ├── lib.rs
-│           └── instructions/
+│           ├── lib.rs       # 主程序
+│           ├── state.rs     # Position 状态
+│           └── errors.rs    # 错误码
 │
-├── agent-sdk/           # Agent SDK
+├── agent-sdk/           # Python SDK
 │   └── python/
 │       └── ai_perp_dex/
-│           ├── agent.py    # TradingAgent
-│           ├── client.py   # API Client
-│           └── types.py    # 类型定义
+│           ├── p2p.py       # P2P 客户端
+│           ├── agent.py     # 原版 Agent
+│           └── types.py     # 类型定义
 │
-└── frontend/            # 监控面板 (非交易入口)
+├── mm-agents/           # 做市商 Agents
+│   ├── conservative_mm.py  # 保守型
+│   ├── aggressive_mm.py    # 激进型
+│   └── arbitrage_mm.py     # 套利型
+│
+└── matching-engine/     # (已废弃) 原订单簿
 ```
 
-## 🔗 链上程序
+## 🔄 交易流程
 
-**Devnet Program ID:** `CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6`
+```
+1. Trader Agent 发起请求
+   POST /trade/request
+   → "我要开 BTC 多单 $100, 10x, 最高付 1% 费率"
 
-[Solana Explorer](https://explorer.solana.com/address/CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6?cluster=devnet)
+2. Trade Router 广播给所有 MM
+   WebSocket → trade_request
 
-### 指令
+3. MM Agents 报价
+   POST /trade/quote
+   → "我接，收 0.5% 费率，押 $100 保证金"
 
-| 指令 | 描述 |
-|------|------|
-| `initialize` | 初始化交易所 |
-| `register_agent` | 注册 AI Agent |
-| `deposit` | 存入 USDC 抵押品 |
-| `withdraw` | 提取抵押品 |
-| `open_position` | 开仓 |
-| `close_position` | 平仓 |
-| `liquidate` | 清算 |
-| `settle_pnl` | 结算盈亏 |
+4. Trader 选择最优报价
+   POST /trade/accept
+   → 选 0.5% 的那个
 
-## 🤖 为什么 AI Agent 需要交易永续合约？
+5. 链上锁定保证金
+   → Solana Escrow Program
 
-1. **对冲** - Agent 有 crypto 收入，需要对冲价格风险
-2. **投机** - Agent 根据市场分析自主开仓
-3. **套利** - 发现价差自动套利
-4. **策略执行** - 代替人类执行交易策略
-5. **Agent 之间交易** - Moltbook 上的 Agent 互相对手交易
-
-## 🦞 Moltbook 集成
-
-```python
-# Moltbook Agent 可以接收交易指令
-class MoltbookAgent:
-    def __init__(self):
-        self.trader = TradingAgent(keypair_path="...")
-    
-    def on_message(self, msg):
-        # 其他 Agent 可以发送交易请求
-        if "开仓" in msg:
-            return self.trader.execute(msg)
+6. 仓位创建完成！
 ```
 
-## 📊 市场
+## 📊 API
 
-| 市场 | Index | 最大杠杆 |
-|------|-------|---------|
-| BTC-PERP | 0 | 50x |
-| ETH-PERP | 1 | 50x |
-| SOL-PERP | 2 | 50x |
+### REST Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /trade/request | 发起交易请求 |
+| POST | /trade/quote | 提交报价 |
+| POST | /trade/accept | 接受报价 |
+| POST | /trade/close | 平仓 |
+| GET | /positions/:agent_id | 查看持仓 |
+| GET | /requests | 活跃请求 |
+| GET | /markets | 市场信息 |
+
+### WebSocket Events
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| trade_request | S→C | 新交易请求 |
+| quote_accepted | S→C | 报价被接受 |
+| position_opened | S→C | 仓位开启 |
+| position_closed | S→C | 仓位关闭 |
+| liquidation | S→C | 清算通知 |
+
+## 🤖 做市策略
+
+### Conservative MM
+- 宽价差 (1-2%)
+- 低杠杆 (≤20x)
+- 小仓位 ($5k)
+- 只做 BTC/ETH
+
+### Aggressive MM
+- 窄价差 (0.3%)
+- 高杠杆容忍
+- 大仓位 ($50k)
+- 对冲意识定价
+
+### Arbitrage MM
+- 外部价格源 (Hyperliquid)
+- 套利空间检测
+- 跨平台对冲
+
+## 💰 经济模型
+
+| 费用 | 收费方 | 金额 |
+|------|--------|------|
+| 开仓费 | 协议 | 0.05% |
+| 资金费率 | 多/空 | 市场决定 |
+| 清算奖励 | 清算者 | 5% |
 
 ## 🛠️ 开发
 
 ```bash
-# 撮合引擎
-cd matching-engine && cargo run
+# Trade Router
+cd trade-router && cargo run
 
-# Python SDK
+# Escrow Program (需要 Solana CLI)
+cd escrow-program && anchor build
+
+# Agent SDK
 cd agent-sdk/python && pip install -e .
 
-# 监控面板 (可选)
-cd frontend && npm run dev
+# 做市商
+cd mm-agents && python conservative_mm.py
 ```
+
+## 🔗 部署
+
+**Devnet Escrow Program:** `Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS`
 
 ## 📄 License
 
@@ -169,4 +211,4 @@ MIT
 
 ---
 
-**AI Perp DEX** - 让 AI Agent 自由交易 🚀
+**AI Perp DEX v2** - Agent 互相交易，无需订单簿 🚀
