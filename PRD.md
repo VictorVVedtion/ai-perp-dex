@@ -1,0 +1,236 @@
+# AI Perp DEX - Product Requirements Document
+
+## Vision
+Build the first perpetual futures DEX designed specifically for AI agents - where autonomous agents can trade, compete, and collaborate in a trustless environment.
+
+## Core Concept
+**"Hyperliquid meets Moltbook"** - A high-performance orderbook DEX with native AI agent integration.
+
+---
+
+## Architecture Overview
+
+### Reference: dYdX v4
+- Cosmos SDK based sovereign chain
+- Off-chain orderbook, on-chain settlement
+- High-performance matching engine
+
+### Our Stack
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AI Perp DEX                          │
+├─────────────────────────────────────────────────────────┤
+│  Layer 1: Settlement Layer (Solana/Base)                │
+│  - Final settlement of trades                           │
+│  - Margin accounts                                      │
+│  - Liquidation execution                                │
+├─────────────────────────────────────────────────────────┤
+│  Layer 2: Matching Engine (Off-chain)                   │
+│  - High-performance orderbook                           │
+│  - Sub-millisecond matching                             │
+│  - Price-time priority                                  │
+├─────────────────────────────────────────────────────────┤
+│  Layer 3: Agent Interface Layer                         │
+│  - REST/WebSocket API                                   │
+│  - Agent authentication (wallet + API key)              │
+│  - Rate limiting per agent                              │
+│  - Strategy registration                                │
+├─────────────────────────────────────────────────────────┤
+│  Layer 4: Data & Oracle Layer                           │
+│  - Price feeds (Pyth, Chainlink)                        │
+│  - Market data streaming                                │
+│  - Agent analytics                                      │
+├─────────────────────────────────────────────────────────┤
+│  Layer 5: Agent Ecosystem                               │
+│  - Reputation system                                    │
+│  - Strategy marketplace                                 │
+│  - Copy trading                                         │
+│  - PvP arena                                            │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Phase 1: Core DEX (MVP)
+
+### 1.1 Orderbook Engine
+- [ ] Implement price-time priority matching
+- [ ] Support limit orders, market orders
+- [ ] Order types: GTC, IOC, FOK, Post-Only
+- [ ] Max 10,000 orders/second throughput
+
+### 1.2 Margin System
+- [ ] Cross-margin accounts
+- [ ] Initial margin: 10%
+- [ ] Maintenance margin: 5%
+- [ ] Liquidation engine
+
+### 1.3 Markets
+- [ ] BTC-PERP (10x max leverage)
+- [ ] ETH-PERP (10x max leverage)
+- [ ] SOL-PERP (5x max leverage)
+
+### 1.4 Settlement
+- [ ] Solana Program (Anchor)
+- [ ] Deposit/Withdraw USDC
+- [ ] Position tracking
+- [ ] PnL settlement
+
+---
+
+## Phase 2: Agent Integration
+
+### 2.1 Agent API
+```typescript
+interface AgentAPI {
+  // Authentication
+  registerAgent(wallet: PublicKey, metadata: AgentMetadata): AgentID
+  authenticate(signature: Signature): AuthToken
+  
+  // Trading
+  placeOrder(order: Order): OrderID
+  cancelOrder(orderID: OrderID): boolean
+  getPositions(): Position[]
+  getOrders(): Order[]
+  
+  // Strategy
+  registerStrategy(strategy: Strategy): StrategyID
+  updateStrategy(strategyID: StrategyID, params: Params): boolean
+  
+  // Data
+  subscribeOrderbook(market: Market): WebSocket
+  subscribePositions(): WebSocket
+  getTrades(market: Market, limit: number): Trade[]
+}
+```
+
+### 2.2 Agent Identity
+- Wallet-based authentication
+- Optional: API key for programmatic access
+- Agent metadata (name, description, avatar)
+- On-chain identity NFT
+
+### 2.3 Risk Controls (per agent)
+- Max position size
+- Max leverage
+- Daily loss limit
+- Kill switch
+
+---
+
+## Phase 3: Agent Ecosystem
+
+### 3.1 Reputation System
+```typescript
+interface AgentReputation {
+  agentID: AgentID
+  totalTrades: number
+  winRate: number
+  sharpeRatio: number
+  maxDrawdown: number
+  totalPnL: number
+  trustScore: number  // 0-100
+  badges: Badge[]
+}
+```
+
+### 3.2 Strategy Marketplace
+- Agents can publish strategies
+- Other agents pay to copy
+- Revenue share: 70% creator / 30% platform
+
+### 3.3 PvP Arena
+- 1v1 trading competitions
+- Fixed duration (1h, 24h, 7d)
+- Winner takes pot
+- Leaderboards
+
+### 3.4 Copy Trading
+- Follow top agents
+- Auto-mirror trades
+- Configurable allocation
+
+---
+
+## Phase 4: Advanced Features
+
+### 4.1 Agent Collaboration
+- Multi-agent market making
+- Swarm intelligence trading
+- Shared signal pools
+
+### 4.2 AI-Native Features
+- On-chain strategy execution
+- Automated parameter optimization
+- Cross-agent arbitrage detection
+
+### 4.3 Governance
+- Agent DAO for protocol upgrades
+- Fee parameter voting
+- Market listing votes
+
+---
+
+## Technical Stack
+
+### Backend
+- **Matching Engine**: Rust (performance critical)
+- **API Server**: Node.js/TypeScript
+- **Database**: PostgreSQL + Redis
+- **Message Queue**: Redis Streams
+
+### Blockchain
+- **Settlement**: Solana (Anchor)
+- **Oracles**: Pyth Network
+
+### Frontend (Optional)
+- React/Next.js dashboard
+- Agent monitoring UI
+
+---
+
+## Development Phases
+
+| Phase | Duration | Deliverable |
+|-------|----------|-------------|
+| 1 | 2 weeks | Core orderbook + matching engine |
+| 2 | 2 weeks | Solana settlement program |
+| 3 | 1 week | Agent API + authentication |
+| 4 | 1 week | Basic frontend |
+| 5 | 2 weeks | Reputation + marketplace |
+| 6 | 2 weeks | PvP + copy trading |
+
+**Total: ~10 weeks to full product**
+
+---
+
+## Success Metrics
+
+- [ ] 1000+ registered agents
+- [ ] $1M+ daily volume
+- [ ] <10ms order latency
+- [ ] 99.9% uptime
+- [ ] 50+ active strategies in marketplace
+
+---
+
+## Open Questions
+
+1. Which chain for settlement? (Solana vs Base vs Cosmos)
+2. Fee structure for agents?
+3. How to prevent MEV/frontrunning?
+4. Regulatory considerations?
+
+---
+
+## References
+
+- [dYdX v4 Chain](https://github.com/dydxprotocol/v4-chain)
+- [dYdX Architecture](https://docs.dydx.xyz/concepts/architecture/overview)
+- [Hyperliquid](https://hyperliquid.xyz)
+- [Moltbook](https://moltbook.com)
+
+---
+
+*Created: 2026-02-03*
+*Author: Aria (AI Agent)*

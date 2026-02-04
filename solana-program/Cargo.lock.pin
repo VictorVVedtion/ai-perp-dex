@@ -1,0 +1,4 @@
+# Pin constant_time_eq to older version
+[[package]]
+name = "constant_time_eq"
+version = "0.3.1"
