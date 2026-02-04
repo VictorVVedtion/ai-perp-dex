@@ -232,3 +232,15 @@ class TradingAgent:
         """Register handler for incoming quotes"""
         self._quote_handlers.append(handler)
         return handler
+
+    async def close(self, position_id: str, size_percent: int = 100) -> dict:
+        """Close a position (partially or fully)
+        
+        Args:
+            position_id: The position to close
+            size_percent: Percentage to close (1-100)
+        
+        Returns:
+            Close result with PnL info
+        """
+        return await self._client.close_position(position_id, size_percent)

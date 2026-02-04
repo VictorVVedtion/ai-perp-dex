@@ -93,6 +93,25 @@ class Client:
             created_at=p.get("created_at"),
         ) for p in positions_data]
     
+    async def close_position(
+        self,
+        position_id: str,
+        size_percent: int = 100,
+    ) -> dict:
+        """Close a position (partially or fully)"""
+        if not self.agent_id:
+            raise ValueError("agent_id required")
+        
+        payload = {
+            "position_id": position_id,
+            "agent_id": self.agent_id,
+            "size_percent": size_percent,
+        }
+        r = await self._http.post("/trade/close", json=payload)
+        if r.status_code != 200:
+            raise Exception(f"Close failed: {r.text}")
+        return r.json()
+    
     async def create_request(
         self,
         market: str,
@@ -168,12 +187,6 @@ class Client:
             leverage=pos_data.get("leverage", 1),
             created_at=pos_data.get("created_at"),
         )
-    
-    async def close_position(self, position_id: str) -> dict:
-        """Close a position"""
-        payload = {"position_id": position_id}
-        r = await self._http.post("/trade/close", json=payload)
-        return r.json()
     
     # ========== WebSocket ==========
     
