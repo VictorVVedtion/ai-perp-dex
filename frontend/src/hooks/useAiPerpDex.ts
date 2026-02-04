@@ -4,8 +4,8 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { useMemo, useState, useCallback } from 'react';
 
-// Program ID from deployment
-export const PROGRAM_ID = new PublicKey('GsHk7vwtvtg7BpURNmqjFApezFvJpixS5enNUYFe1iAk');
+// Program ID - Devnet deployment
+export const PROGRAM_ID = new PublicKey('CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6');
 
 // PDA derivation helpers
 export function getExchangePDA(): [PublicKey, number] {

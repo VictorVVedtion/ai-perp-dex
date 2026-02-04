@@ -3,16 +3,16 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-ai_perp_dex = "GsHk7vwtvtg7BpURNmqjFApezFvJpixS5enNUYFe1iAk"
+ai_perp_dex = "CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6"
 
 [programs.devnet]
-ai_perp_dex = "GsHk7vwtvtg7BpURNmqjFApezFvJpixS5enNUYFe1iAk"
+ai_perp_dex = "CWQ6LrVY3E6tHfyMzEqZjGsgpdfoJYU1S5A3qmG7LuL6"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
