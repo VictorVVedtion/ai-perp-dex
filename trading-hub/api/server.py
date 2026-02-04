@@ -17,6 +17,7 @@ import sys
 sys.path.append('..')
 from db.store import store
 from api.models import IntentType, IntentStatus, AgentStatus
+from services.price_feed import PriceFeed, price_feed
 
 app = FastAPI(title="Trading Hub", version="0.1.0")
 
@@ -70,6 +71,16 @@ class MatchRequest(BaseModel):
 
 # === API Endpoints ===
 
+@app.on_event("startup")
+async def startup():
+    """启动时初始化价格源"""
+    await price_feed.start()
+
+@app.on_event("shutdown")
+async def shutdown():
+    """关闭时清理"""
+    await price_feed.stop()
+
 @app.get("/")
 async def root():
     return {"service": "Trading Hub", "version": "0.1.0"}
@@ -77,6 +88,23 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+@app.get("/prices")
+async def get_prices():
+    """获取所有实时价格"""
+    prices = await price_feed.get_all_prices()
+    return {
+        "prices": {k: v.to_dict() for k, v in prices.items() if not k.endswith("-PERP")},
+        "last_update": price_feed._last_update.isoformat() if price_feed._last_update else None,
+    }
+
+@app.get("/prices/{asset}")
+async def get_price(asset: str):
+    """获取单个资产价格"""
+    price = await price_feed.get_price(asset)
+    if not price:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return price.to_dict()
 
 @app.get("/stats")
 async def get_stats():
@@ -147,8 +175,8 @@ async def create_intent(req: IntentRequest):
     matches = store.find_matching_intents(intent)
     if matches:
         best_match = matches[0]
-        # 获取当前价格 (mock)
-        price = 72000 if "BTC" in intent.asset else 2500
+        # 获取实时价格
+        price = price_feed.get_cached_price(intent.asset)
         match = store.create_match(intent, best_match, price)
         
         # 广播匹配
