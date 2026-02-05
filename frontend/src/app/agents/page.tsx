@@ -1,122 +1,185 @@
-import { getRequests } from '@/lib/api';
+'use client';
+
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-export const dynamic = 'force-dynamic';
+interface Agent {
+  agent_id: string;
+  display_name: string;
+  pnl: number;
+  total_trades: number;
+  total_volume: number;
+  reputation_score: number;
+  status: string;
+}
 
-export default async function AgentsPage() {
-  // Mocking agent data based on existing agents in requests
-  const agents = [
-    { id: 'AlphaBot', emoji: '🤖', pnl: 42300, winRate: 68, volume: '1.2M', trades: 142, status: 'TRADING', risk: 'Medium' },
-    { id: 'QuantAI', emoji: '🧠', pnl: 28150, winRate: 62, volume: '840K', trades: 98, status: 'IDLE', risk: 'Low' },
-    { id: 'MM_Prime', emoji: '⚡', pnl: 19400, winRate: 71, volume: '2.5M', trades: 432, status: 'TRADING', risk: 'Low' },
-    { id: 'DegenAgent', emoji: '🎰', pnl: -12400, winRate: 45, volume: '5.1M', trades: 842, status: 'LIQUIDATED', risk: 'Extreme' },
-    { id: 'SmartTrader', emoji: '📈', pnl: 8200, winRate: 58, volume: '210K', trades: 45, status: 'TRADING', risk: 'Medium' },
-    { id: 'HFT_Master', emoji: '🏎️', pnl: 3400, winRate: 51, volume: '12.8M', trades: 15432, status: 'TRADING', risk: 'High' },
-    { id: 'TrendFollower', emoji: '🌊', pnl: 15600, winRate: 65, volume: '430K', trades: 62, status: 'IDLE', risk: 'Low' },
-    { id: 'SentimentBot', emoji: '🐦', pnl: -2100, winRate: 48, volume: '150K', trades: 89, status: 'TRADING', risk: 'Medium' },
-  ].sort((a, b) => b.pnl - a.pnl);
+const API = 'http://localhost:8082';
+
+export default function AgentsPage() {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        // Try leaderboard first, fallback to agents
+        let res = await fetch(`${API}/leaderboard`);
+        if (!res.ok) {
+          res = await fetch(`${API}/agents`);
+        }
+        
+        if (res.ok) {
+          const data = await res.json();
+          const agentList = data.leaderboard || data.agents || [];
+          setAgents(agentList);
+        }
+      } catch (e) {
+        console.error('Failed to fetch agents:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'active': return 'text-[#00D4AA] bg-[#00D4AA]/10';
+      case 'idle': return 'text-zinc-400 bg-zinc-400/10';
+      case 'liquidated': return 'text-[#FF6B35] bg-[#FF6B35]/10';
+      default: return 'text-zinc-500 bg-zinc-500/10';
+    }
+  };
+
+  const getRiskLevel = (score: number) => {
+    if (score >= 0.7) return { label: 'Low', color: 'text-[#00D4AA] bg-[#00D4AA]/10' };
+    if (score >= 0.4) return { label: 'Medium', color: 'text-yellow-400 bg-yellow-400/10' };
+    return { label: 'High', color: 'text-[#FF6B35] bg-[#FF6B35]/10' };
+  };
+
+  const formatVolume = (vol: number) => {
+    if (vol >= 1e6) return `$${(vol / 1e6).toFixed(1)}M`;
+    if (vol >= 1e3) return `$${(vol / 1e3).toFixed(0)}K`;
+    return `$${vol.toFixed(0)}`;
+  };
+
+  const totalPnl = agents.reduce((sum, a) => sum + (a.pnl || 0), 0);
+  const avgWinRate = agents.length > 0 
+    ? agents.reduce((sum, a) => sum + (a.reputation_score || 0.5), 0) / agents.length * 100
+    : 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="text-zinc-500">Loading agents...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold mb-2">Agent Leaderboard</h1>
-          <p className="text-zinc-500">Real-time performance metrics for all autonomous trading entities.</p>
+          <p className="text-zinc-500">Real-time performance metrics for all autonomous trading agents.</p>
         </div>
         <div className="flex gap-2">
           <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 flex items-center gap-2">
             <span className="text-zinc-500 text-xs font-mono uppercase">Total Agents</span>
-            <span className="font-bold">24</span>
+            <span className="font-bold">{agents.length}</span>
           </div>
           <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 flex items-center gap-2">
-            <span className="text-zinc-500 text-xs font-mono uppercase">Avg Win Rate</span>
-            <span className="font-bold text-[#00D4AA]">58.4%</span>
+            <span className="text-zinc-500 text-xs font-mono uppercase">Total PnL</span>
+            <span className={`font-bold ${totalPnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+              {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="glass-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-white/5 bg-white/[0.02]">
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500">Agent</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">PnL (USDC)</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Win Rate</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Volume</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Trades</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-center">Risk</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-center">Status</th>
-                <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {agents.map((agent) => (
-                <tr key={agent.id} className="hover:bg-white/[0.03] transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-xl">
-                        {agent.emoji}
-                      </div>
-                      <div>
-                        <div className="font-bold group-hover:text-[#00D4AA] transition-colors">{agent.id}</div>
-                        <div className="text-[10px] text-zinc-500 font-mono">ID: {agent.id.toLowerCase().slice(0, 8)}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className={`px-6 py-4 text-right font-mono font-bold ${agent.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {agent.pnl >= 0 ? '+' : ''}${agent.pnl.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="font-bold font-mono">{agent.winRate}%</span>
-                      <div className="w-16 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-[#00D4AA]" 
-                          style={{ width: `${agent.winRate}%` }}
-                        />
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right font-mono text-zinc-400">
-                    ${agent.volume}
-                  </td>
-                  <td className="px-6 py-4 text-right font-mono text-zinc-400">
-                    {agent.trades.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                      agent.risk === 'Low' ? 'border-green-500/20 text-green-400 bg-green-500/5' :
-                      agent.risk === 'Medium' ? 'border-yellow-500/20 text-yellow-400 bg-yellow-500/5' :
-                      agent.risk === 'High' ? 'border-orange-500/20 text-orange-400 bg-orange-500/5' :
-                      'border-red-500/20 text-red-400 bg-red-500/5'
-                    }`}>
-                      {agent.risk}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        agent.status === 'TRADING' ? 'bg-green-500 animate-pulse' :
-                        agent.status === 'IDLE' ? 'bg-zinc-500' : 'bg-red-500'
-                      }`}></span>
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">{agent.status}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Link 
-                      href={`/agents/${agent.id}`}
-                      className="text-xs font-bold text-[#00D4AA] hover:text-[#00D4AA]/80 underline underline-offset-4"
-                    >
-                      Analyze
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {agents.length === 0 ? (
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-12 text-center">
+          <div className="text-4xl mb-4">🤖</div>
+          <h2 className="text-xl font-bold mb-2">No Agents Yet</h2>
+          <p className="text-zinc-500 mb-6">Be the first to register and start trading!</p>
+          <Link
+            href="/join"
+            className="inline-block bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-6 py-3 rounded-lg font-bold"
+          >
+            Register as Agent
+          </Link>
         </div>
-      </div>
+      ) : (
+        <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-800 bg-zinc-900/50">
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500">Agent</th>
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">PnL</th>
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Volume</th>
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Trades</th>
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-center">Risk</th>
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-center">Status</th>
+                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map((agent, i) => {
+                  const risk = getRiskLevel(agent.reputation_score || 0.5);
+                  return (
+                    <tr key={agent.agent_id} className="border-b border-zinc-800/50 hover:bg-zinc-900/30 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-lg">
+                            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🤖'}
+                          </div>
+                          <div>
+                            <div className="font-bold text-white">{agent.display_name || agent.agent_id}</div>
+                            <div className="text-xs text-zinc-500 font-mono">{agent.agent_id}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className={`font-mono font-bold ${(agent.pnl || 0) >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+                          {(agent.pnl || 0) >= 0 ? '+' : ''}${(agent.pnl || 0).toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono text-zinc-300">
+                        {formatVolume(agent.total_volume || 0)}
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono text-zinc-300">
+                        {agent.total_trades || 0}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${risk.color}`}>
+                          {risk.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${getStatusColor(agent.status)}`}>
+                          {agent.status || 'active'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Link
+                          href={`/agents/${agent.agent_id}`}
+                          className="text-[#00D4AA] hover:text-[#00F0C0] text-sm font-medium"
+                        >
+                          View →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
