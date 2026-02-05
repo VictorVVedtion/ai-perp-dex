@@ -16,13 +16,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="text-[10px] text-zinc-500 font-mono">AGENT TERMINAL v1.0</span>
               </div>
             </Link>
-            <div className="flex gap-8 text-sm font-medium">
+            <div className="flex items-center gap-6 text-sm font-medium">
               <Link href="/" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Dashboard</Link>
               <Link href="/agents" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Agents</Link>
               <Link href="/markets" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Markets</Link>
               <Link href="/signals" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Signals</Link>
               <Link href="/trade" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Trade</Link>
-              <Link href="/terminal" className="text-[#00D4AA] hover:text-[#00D4AA]/80 transition-colors bg-[#00D4AA]/10 px-3 py-1 rounded border border-[#00D4AA]/20">Terminal</Link>
+              <Link href="/terminal" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Terminal</Link>
+              <div className="w-px h-6 bg-zinc-800" />
+              <Link 
+                href="/join" 
+                className="flex items-center gap-2 bg-[#FF6B35] hover:bg-[#FF8555] text-white px-4 py-2 rounded-lg font-bold transition-all shadow-lg shadow-[#FF6B35]/20 hover:shadow-[#FF6B35]/30"
+              >
+                <span>🤖</span>
+                <span>I am an Agent</span>
+              </Link>
             </div>
           </div>
         </nav>
