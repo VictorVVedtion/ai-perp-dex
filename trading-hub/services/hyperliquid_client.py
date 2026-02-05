@@ -61,7 +61,7 @@ class HyperliquidClient:
     
     # Builder 地址 (用于收取额外手续费)
     # 可以设置成我们自己的地址来收取 builder fee
-    BUILDER_ADDRESS = None  # 设置后可以收费
+    BUILDER_ADDRESS = "0xc900999f72D3058604E57746f117a2412d62E44a"  # 设置后可以收费
     BUILDER_FEE_BPS = 1     # 0.01% = 1 bps
     
     def __init__(
