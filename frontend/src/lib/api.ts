@@ -1,4 +1,5 @@
 import { API_BASE_URL, ENDPOINTS } from './config';
+import type { ApiIntent, ApiAgent, ApiSignal, ApiLeader } from './types';
 
 const API = API_BASE_URL;
 
@@ -75,7 +76,7 @@ export async function getRequests(): Promise<TradeRequest[]> {
     
     if (!Array.isArray(intents)) return [];
     
-    return intents.map((x: any) => ({
+    return intents.map((x: ApiIntent) => ({
       id: x.intent_id || x.id,
       agentId: x.agent_id || x.agentId,
       market: x.asset || x.market || 'BTC-PERP',
@@ -100,7 +101,7 @@ export async function getAgents(): Promise<Agent[]> {
     
     if (!Array.isArray(agents)) return [];
     
-    return agents.map((x: any) => ({
+    return agents.map((x: ApiAgent) => ({
       id: x.agent_id || x.id,
       name: x.display_name || x.name || x.agent_id || 'Unknown',
       type: x.type || 'Trader',
@@ -124,7 +125,7 @@ export async function getSignals(): Promise<Signal[]> {
     
     if (!Array.isArray(signals)) return [];
     
-    return signals.map((x: any) => ({
+    return signals.map((x: ApiSignal) => ({
       id: x.signal_id || x.id,
       target: x.target || x.prediction || 'Unknown target',
       deadline: x.deadline || x.expires_at || new Date().toISOString(),
@@ -153,7 +154,7 @@ export async function getLeaderboard(): Promise<Agent[]> {
     
     if (!Array.isArray(leaders)) return [];
     
-    return leaders.map((x: any) => ({
+    return leaders.map((x: ApiLeader) => ({
       id: x.agent_id || x.id,
       name: x.display_name || x.name || x.agent_id || 'Unknown',
       type: x.type || 'Trader',
