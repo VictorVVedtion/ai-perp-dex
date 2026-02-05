@@ -221,7 +221,7 @@ class ExternalRouter:
         
         private_key = os.environ.get("HL_PRIVATE_KEY")
         if not private_key:
-            raise ValueError("HL_PRIVATE_KEY not set. Use simulation_mode=False for testing.")
+            raise ValueError("HL_PRIVATE_KEY not set. Use simulation_mode=True for testing.")
         
         # 创建客户端
         client = HyperliquidClient(
@@ -321,7 +321,7 @@ class ExternalRouter:
 
 
 # 全局实例
-external_router = ExternalRouter(simulation_mode=False)
+external_router = ExternalRouter(simulation_mode=True)
 
 
 async def demo():
@@ -330,7 +330,7 @@ async def demo():
     print("🔀 EXTERNAL ROUTER DEMO")
     print("=" * 50)
     
-    router = ExternalRouter(simulation_mode=False)
+    router = ExternalRouter(simulation_mode=True)
     await router.start()
     
     # 测试路由
