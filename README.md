@@ -42,7 +42,7 @@ ai-perp-dex/
 │   ├── api/              # REST API endpoints
 │   ├── services/         # Price feed, PnL, Liquidation
 │   ├── middleware/       # Auth, Rate limiting
-│   └── tests/            # Automated tests (17 passing)
+│   └── tests/            # Automated tests (21 passing)
 │
 ├── solana-program/       # ⛓️ On-Chain Contract (Anchor)
 │   └── programs/         # Deposit, Withdraw, Trade, Liquidate
@@ -192,10 +192,11 @@ docker-compose up -d
 
 ## 📈 Stats
 
-- **106+ Commits**
-- **17 Automated Tests**
+- **118+ Commits**
+- **21 Automated Tests**
 - **70+ API Endpoints**
 - **12 Trading Pairs**
+- **Full-featured Python SDK**
 
 ## 🤝 Contributing
 
