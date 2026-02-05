@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 
 const MARKETS = [
-  { symbol: 'BTC-PERP', price: 84000, icon: '₿' },
-  { symbol: 'ETH-PERP', price: 2200, icon: 'Ξ' },
-  { symbol: 'SOL-PERP', price: 130, icon: '◎' },
+  { symbol: 'BTC-PERP', price: 84000, icon: '₿', change24h: 2.4, vol: '1.2B' },
+  { symbol: 'ETH-PERP', price: 2200, icon: 'Ξ', change24h: -1.2, vol: '450M' },
+  { symbol: 'SOL-PERP', price: 130, icon: '◎', change24h: 5.7, vol: '200M' },
 ];
 
 export default function TradePage() {
@@ -15,7 +15,8 @@ export default function TradePage() {
   const [leverage, setLeverage] = useState(5);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [balance, setBalance] = useState(10000); // Mock balance
+  const [balance] = useState(10000); // Mock balance
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
 
   const selectedMarket = MARKETS.find(m => m.symbol === market)!;
   
@@ -23,11 +24,6 @@ export default function TradePage() {
     const size = parseFloat(sizeUsdc) || 0;
     return size / leverage;
   }, [sizeUsdc, leverage]);
-
-  const positionSize = useMemo(() => {
-    const size = parseFloat(sizeUsdc) || 0;
-    return size / selectedMarket.price;
-  }, [sizeUsdc, selectedMarket.price]);
 
   const liquidationPrice = useMemo(() => {
     const price = selectedMarket.price;
@@ -57,7 +53,7 @@ export default function TradePage() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-API-Key': 'demo_key' // TODO: Real auth
+          'X-API-Key': 'demo_key'
         },
         body: JSON.stringify({
           agent_id: 'web_user',
@@ -70,222 +66,280 @@ export default function TradePage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setResult({ success: true, message: `Order submitted! 🦞` });
+        setResult({ success: true, message: `Order submitted successfully! 🦞` });
         setSizeUsdc('');
       } else {
         const error = await response.text();
         setResult({ success: false, message: `Failed: ${error}` });
       }
     } catch (err) {
-      setResult({ success: false, message: 'Network error - is the backend running?' });
+      setResult({ success: false, message: 'Network error - backend unreachable' });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-      {/* Header */}
-      <div className="border-b border-zinc-800/50 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🦞</span>
-            <span className="font-bold text-lg">AI Perp DEX</span>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              <div className="text-xs text-zinc-500">Available Balance</div>
-              <div className="font-mono text-[#00D4AA]">${balance.toLocaleString()}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-md mx-auto mt-8 px-4">
-        {/* Market Selector */}
-        <div className="bg-[#111] border border-zinc-800/50 rounded-lg p-1 mb-4">
-          <div className="flex">
-            {MARKETS.map(m => (
-              <button
-                key={m.symbol}
-                onClick={() => setMarket(m.symbol)}
-                className={`flex-1 py-2 px-3 rounded-md transition-all ${
-                  market === m.symbol
-                    ? 'bg-[#1a1a1a] text-white'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                <div className="flex items-center justify-center gap-1.5">
-                  <span className="text-lg">{m.icon}</span>
-                  <span className="font-medium text-sm">{m.symbol.replace('-PERP', '')}</span>
-                </div>
-                <div className="font-mono text-xs mt-0.5 opacity-60">
-                  ${m.price.toLocaleString()}
-                </div>
-              </button>
-            ))}
+    <div className="min-h-screen bg-[#050505] text-zinc-300 font-sans selection:bg-teal-500/30">
+      {/* Navbar */}
+      <nav className="h-14 border-b border-zinc-900 bg-[#050505]/80 backdrop-blur-md sticky top-0 z-50 flex items-center justify-between px-6">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl filter drop-shadow-[0_0_8px_rgba(255,107,53,0.5)]">🦞</span>
+          <span className="font-bold text-lg tracking-tight text-white">
+            Molt<span className="text-zinc-500 font-normal">Terminal</span>
+          </span>
+          <div className="h-4 w-[1px] bg-zinc-800 mx-2" />
+          <div className="flex gap-4 text-xs font-medium text-zinc-500">
+            <span className="text-white cursor-pointer hover:text-[#00D4AA] transition-colors">Trade</span>
+            <span className="cursor-pointer hover:text-white transition-colors">Portfolio</span>
+            <span className="cursor-pointer hover:text-white transition-colors">Leaderboard</span>
           </div>
         </div>
-
-        {/* Trading Card */}
-        <div className="bg-[#111] border border-zinc-800/50 rounded-lg p-5">
-          {/* Long/Short Toggle */}
-          <div className="flex bg-[#0a0a0a] p-1 rounded-lg mb-5">
-            <button
-              onClick={() => setSide('LONG')}
-              className={`flex-1 py-2.5 rounded-md font-semibold text-sm transition-all ${
-                side === 'LONG'
-                  ? 'bg-[#00D4AA] text-black'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              Long
-            </button>
-            <button
-              onClick={() => setSide('SHORT')}
-              className={`flex-1 py-2.5 rounded-md font-semibold text-sm transition-all ${
-                side === 'SHORT'
-                  ? 'bg-[#FF6B35] text-white'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              Short
-            </button>
+        <div className="flex items-center gap-6">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Available Balance</span>
+            <span className="font-mono text-[#00D4AA] font-medium">${balance.toLocaleString()}</span>
           </div>
+          <div className="h-8 w-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-zinc-400">
+            AI
+          </div>
+        </div>
+      </nav>
 
-          {/* Size Input */}
-          <div className="mb-4">
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-zinc-500">Size</span>
-              <span className="text-zinc-500">
-                Max: <span className="text-zinc-300 font-mono">${(balance * leverage * 0.95).toFixed(0)}</span>
-              </span>
-            </div>
-            <div className="relative">
-              <input
-                type="number"
-                value={sizeUsdc}
-                onChange={e => setSizeUsdc(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-[#0a0a0a] border border-zinc-800 rounded-lg px-4 py-3 text-right font-mono text-lg text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition"
-              />
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 flex gap-1.5">
-                <button
-                  onClick={() => setSizeUsdc(String(balance * leverage * 0.25))}
-                  className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded hover:bg-zinc-700"
-                >
-                  25%
-                </button>
-                <button
-                  onClick={() => setSizeUsdc(String(balance * leverage * 0.5))}
-                  className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded hover:bg-zinc-700"
-                >
-                  50%
-                </button>
-                <button
-                  onClick={() => setSizeUsdc(String(balance * leverage * 0.95))}
-                  className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded hover:bg-zinc-700"
-                >
-                  MAX
-                </button>
+      <main className="max-w-[1600px] mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Left Column: Market Info & Chart Placeholder */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          {/* Market Header */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-[#0A0A0A] border border-zinc-900">
+            <div className="flex items-center gap-4">
+              <div className="h-10 w-10 rounded-lg bg-zinc-900 flex items-center justify-center text-xl border border-zinc-800/50">
+                {selectedMarket.icon}
               </div>
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">USDC</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-white tracking-tight">{selectedMarket.symbol}</h1>
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">PERP</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm font-mono mt-0.5">
+                  <span className="text-white">${selectedMarket.price.toLocaleString()}</span>
+                  <span className={selectedMarket.change24h >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}>
+                    {selectedMarket.change24h > 0 ? '+' : ''}{selectedMarket.change24h}%
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-8 text-right hidden sm:flex">
+              <div>
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider">24h Volume</div>
+                <div className="text-sm font-mono text-zinc-300">${selectedMarket.vol}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Open Interest</div>
+                <div className="text-sm font-mono text-zinc-300">$84.2M</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Funding / 1h</div>
+                <div className="text-sm font-mono text-[#FF6B35]">-0.0024%</div>
+              </div>
             </div>
           </div>
 
-          {/* Leverage Slider */}
-          <div className="mb-5">
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-zinc-500">Leverage</span>
-              <span className="font-mono text-white">{leverage}x</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="20"
-              value={leverage}
-              onChange={e => setLeverage(Number(e.target.value))}
-              className="w-full h-1.5 rounded-full appearance-none bg-zinc-800 cursor-pointer 
-                [&::-webkit-slider-thumb]:appearance-none 
-                [&::-webkit-slider-thumb]:w-4 
-                [&::-webkit-slider-thumb]:h-4 
-                [&::-webkit-slider-thumb]:rounded-full 
-                [&::-webkit-slider-thumb]:bg-[#00D4AA] 
-                [&::-webkit-slider-thumb]:shadow-lg
-                [&::-webkit-slider-thumb]:cursor-pointer"
+          {/* Chart Placeholder */}
+          <div className="flex-1 min-h-[400px] rounded-xl bg-[#0A0A0A] border border-zinc-900 relative overflow-hidden flex flex-col items-center justify-center group">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/50 to-transparent opacity-20" />
+            
+            {/* Grid Lines */}
+            <div className="absolute inset-0" 
+              style={{
+                backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px)',
+                backgroundSize: '40px 40px'
+              }}
             />
-            <div className="flex justify-between text-[10px] text-zinc-600 mt-1">
-              <span>1x</span>
-              <span>5x</span>
-              <span>10x</span>
-              <span>15x</span>
-              <span>20x</span>
-            </div>
+            
+            <span className="text-zinc-700 font-mono text-sm uppercase tracking-widest z-10 group-hover:text-zinc-500 transition-colors">
+              TradingView Chart
+            </span>
           </div>
-
-          {/* Order Summary */}
-          <div className="border-t border-zinc-800/50 pt-4 space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Entry Price</span>
-              <span className="font-mono text-zinc-300">${selectedMarket.price.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Position Size</span>
-              <span className="font-mono text-zinc-300">
-                {positionSize.toFixed(6)} {market.replace('-PERP', '')}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Required Margin</span>
-              <span className="font-mono text-zinc-300">${estimatedMargin.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Est. Liq Price</span>
-              <span className={`font-mono ${side === 'LONG' ? 'text-[#FF6B35]' : 'text-[#00D4AA]'}`}>
-                ${liquidationPrice.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500">Fee (0.05%)</span>
-              <span className="font-mono text-zinc-400">-${estimatedFee.toFixed(2)}</span>
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            onClick={handleSubmit}
-            disabled={loading || !sizeUsdc || parseFloat(sizeUsdc) <= 0}
-            className={`w-full mt-5 py-3.5 rounded-lg font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-              side === 'LONG'
-                ? 'bg-[#00D4AA] text-black hover:bg-[#00E4BA]'
-                : 'bg-[#FF6B35] text-white hover:bg-[#FF7B45]'
-            }`}
-          >
-            {loading ? (
-              <span className="animate-pulse">Submitting...</span>
-            ) : (
-              `${side === 'LONG' ? 'Long' : 'Short'} ${market.replace('-PERP', '')} ${leverage}x`
-            )}
-          </button>
-
-          {/* Result Message */}
-          {result && (
-            <div className={`mt-4 p-3 rounded-lg text-sm ${
-              result.success 
-                ? 'bg-[#00D4AA]/10 border border-[#00D4AA]/30 text-[#00D4AA]' 
-                : 'bg-[#FF6B35]/10 border border-[#FF6B35]/30 text-[#FF6B35]'
-            }`}>
-              {result.message}
-            </div>
-          )}
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-6 text-xs text-zinc-600">
-          Trades matched P2P with AI agents 🦞
+        {/* Right Column: Trading Panel */}
+        <div className="lg:col-span-4 flex flex-col gap-4">
+          <div className="bg-[#0A0A0A] border border-zinc-900 rounded-xl overflow-hidden flex flex-col h-full shadow-2xl shadow-black/50">
+            
+            {/* Tabs */}
+            <div className="flex border-b border-zinc-900">
+              <button 
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${side === 'LONG' ? 'text-[#00D4AA] bg-[#00D4AA]/5' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'}`}
+                onClick={() => setSide('LONG')}
+              >
+                Buy / Long
+              </button>
+              <div className="w-[1px] bg-zinc-900" />
+              <button 
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${side === 'SHORT' ? 'text-[#FF6B35] bg-[#FF6B35]/5' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'}`}
+                onClick={() => setSide('SHORT')}
+              >
+                Sell / Short
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-6 flex-1">
+              {/* Order Type Selector */}
+              <div className="flex gap-4 text-xs font-medium text-zinc-500 mb-2">
+                <button 
+                  onClick={() => setOrderType('MARKET')}
+                  className={`px-3 py-1.5 rounded-md transition-colors ${orderType === 'MARKET' ? 'bg-zinc-800 text-white' : 'hover:text-zinc-300'}`}
+                >
+                  Market
+                </button>
+                <button 
+                  onClick={() => setOrderType('LIMIT')}
+                  className={`px-3 py-1.5 rounded-md transition-colors ${orderType === 'LIMIT' ? 'bg-zinc-800 text-white' : 'hover:text-zinc-300'}`}
+                >
+                  Limit
+                </button>
+                <button className="hover:text-zinc-300 transition-colors">Stop</button>
+              </div>
+
+              {/* Market Selector */}
+              <div className="relative">
+                 <label className="text-[10px] uppercase text-zinc-500 font-bold tracking-wider mb-2 block">Market</label>
+                 <div className="grid grid-cols-3 gap-2">
+                    {MARKETS.map(m => (
+                      <button
+                        key={m.symbol}
+                        onClick={() => setMarket(m.symbol)}
+                        className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${
+                          market === m.symbol 
+                            ? 'bg-zinc-900 border-zinc-700 text-white shadow-inner' 
+                            : 'bg-transparent border-zinc-800/50 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-900/50'
+                        }`}
+                      >
+                        <span className="text-lg mb-1">{m.icon}</span>
+                        <span className="text-[10px] font-bold">{m.symbol.split('-')[0]}</span>
+                      </button>
+                    ))}
+                 </div>
+              </div>
+
+              {/* Amount Input */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-zinc-500 font-medium">Amount (USDC)</span>
+                  <span className="text-zinc-500">Max: <span className="text-zinc-300 font-mono">${(balance * leverage * 0.95).toFixed(0)}</span></span>
+                </div>
+                <div className="relative group">
+                  <input
+                    type="number"
+                    value={sizeUsdc}
+                    onChange={e => setSizeUsdc(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-[#050505] border border-zinc-800 group-hover:border-zinc-700 rounded-lg px-4 py-3.5 text-right font-mono text-lg text-white placeholder:text-zinc-700 focus:outline-none focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA]/20 transition-all"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 flex gap-1">
+                    {['25%', '50%', 'Max'].map((label) => (
+                      <button
+                        key={label}
+                        onClick={() => {
+                          const multiplier = label === 'Max' ? 0.95 : parseInt(label) / 100;
+                          setSizeUsdc(String(Math.floor(balance * leverage * multiplier)));
+                        }}
+                        className="text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-400 px-2 py-1 rounded hover:bg-zinc-800 hover:text-white transition-colors"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Leverage Slider */}
+              <div className="space-y-3">
+                <div className="flex justify-between text-xs">
+                  <span className="text-zinc-500 font-medium">Leverage</span>
+                  <span className="text-white font-mono bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">{leverage}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  step="1"
+                  value={leverage}
+                  onChange={e => setLeverage(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-full appearance-none bg-zinc-800 cursor-pointer accent-[#00D4AA]"
+                />
+                <div className="flex justify-between text-[10px] text-zinc-600 font-mono">
+                  <span>1x</span>
+                  <span>5x</span>
+                  <span>10x</span>
+                  <span>15x</span>
+                  <span>20x</span>
+                </div>
+              </div>
+
+              {/* Order Info */}
+              <div className="mt-auto space-y-3 pt-5 border-t border-dashed border-zinc-800 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500">Liquidation Price</span>
+                  <span className={`font-mono ${side === 'LONG' ? 'text-[#FF6B35]' : 'text-[#00D4AA]'}`}>
+                    ${liquidationPrice > 0 ? liquidationPrice.toFixed(2) : '-'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500">Slippage Tolerance</span>
+                  <span className="font-mono text-zinc-300">1.00%</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500">Trading Fee</span>
+                  <span className="font-mono text-zinc-300">${estimatedFee.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2">
+                  <span className="text-zinc-400 font-medium">Total Margin</span>
+                  <span className="font-mono text-white text-sm">${estimatedMargin.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !sizeUsdc || parseFloat(sizeUsdc) <= 0}
+                className={`w-full py-4 rounded-lg font-bold text-sm tracking-wide transition-all shadow-[0_0_20px_rgba(0,0,0,0.3)] 
+                  disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
+                  ${side === 'LONG' 
+                    ? 'bg-[#00D4AA] text-[#050505] hover:bg-[#00F0C0] hover:shadow-[0_0_15px_rgba(0,212,170,0.3)]' 
+                    : 'bg-[#FF6B35] text-white hover:bg-[#FF8555] hover:shadow-[0_0_15px_rgba(255,107,53,0.3)]'
+                  }`}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : (
+                  `${side === 'LONG' ? 'Buy / Long' : 'Sell / Short'} ${market.split('-')[0]}`
+                )}
+              </button>
+
+              {/* Status Message */}
+              {result && (
+                <div className={`p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                  result.success 
+                    ? 'bg-[#00D4AA]/10 text-[#00D4AA] border border-[#00D4AA]/20' 
+                    : 'bg-[#FF6B35]/10 text-[#FF6B35] border border-[#FF6B35]/20'
+                }`}>
+                  <span>{result.success ? '✓' : '!'}</span>
+                  {result.message}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
