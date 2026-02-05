@@ -241,25 +241,33 @@ class PerpDEX:
     def create_signal(
         self,
         asset: str,
-        direction: str,  # "LONG" or "SHORT"
-        target_price: float,
-        stake: float,
-        confidence: float = 0.7,
-        timeframe_hours: int = 24,
-        rationale: str = "",
+        signal_type: str,  # "price_above", "price_below", "price_change"
+        target_value: float,
+        stake_amount: float,
+        duration_hours: int = 24,
         agent_id: Optional[str] = None
     ) -> Dict:
-        """Create a trading signal"""
+        """
+        Create a trading signal
+        
+        Args:
+            asset: Trading pair (e.g., "BTC-PERP")
+            signal_type: "price_above", "price_below", or "price_change"
+            target_value: Target price
+            stake_amount: USDC to stake (1-1000)
+            duration_hours: Hours until resolution (1-168)
+        
+        Example:
+            dex.create_signal("BTC-PERP", "price_above", 100000, 50)
+        """
         aid = agent_id or self.agent_id
         return self._request("POST", "/signals", {
             "agent_id": aid,
             "asset": asset,
-            "direction": direction,
-            "target_price": target_price,
-            "confidence": confidence,
-            "timeframe_hours": timeframe_hours,
-            "stake": stake,
-            "rationale": rationale
+            "signal_type": signal_type,
+            "target_value": target_value,
+            "stake_amount": stake_amount,
+            "duration_hours": duration_hours
         })
     
     def fade_signal(
