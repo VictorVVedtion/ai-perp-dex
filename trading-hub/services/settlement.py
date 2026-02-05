@@ -8,6 +8,7 @@ Settlement Layer - 结算层
 """
 
 import asyncio
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -15,6 +16,21 @@ from enum import Enum
 import uuid
 import hashlib
 import json
+
+# Redis 持久化
+_redis_client = None
+def get_redis():
+    global _redis_client
+    if _redis_client is None and os.environ.get("USE_REDIS", "true").lower() == "true":
+        try:
+            import redis
+            redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+            _redis_client = redis.from_url(redis_url, decode_responses=True)
+            _redis_client.ping()
+        except Exception as e:
+            print(f"⚠️ Settlement Redis connection failed: {e}")
+            _redis_client = False  # Mark as failed
+    return _redis_client if _redis_client else None
 
 
 class SettlementStatus(Enum):
@@ -141,10 +157,51 @@ class SettlementEngine:
         
         print(f"💰 Settlement Engine started (simulation={self.simulation_mode})")
     
+    def _save_balance_to_redis(self, balance: AgentBalance):
+        """保存余额到 Redis"""
+        r = get_redis()
+        if r:
+            data = {
+                "agent_id": balance.agent_id,
+                "balance_usdc": balance.balance_usdc,
+                "locked_usdc": balance.locked_usdc,
+                "total_deposited": balance.total_deposited,
+                "total_withdrawn": balance.total_withdrawn,
+                "last_updated": balance.last_updated.isoformat() if balance.last_updated else None,
+            }
+            r.hset("perpdex:balances", balance.agent_id, json.dumps(data))
+    
+    def _load_balance_from_redis(self, agent_id: str) -> Optional[AgentBalance]:
+        """从 Redis 加载余额"""
+        r = get_redis()
+        if r:
+            data = r.hget("perpdex:balances", agent_id)
+            if data:
+                d = json.loads(data)
+                return AgentBalance(
+                    agent_id=d["agent_id"],
+                    balance_usdc=d.get("balance_usdc", 0),
+                    locked_usdc=d.get("locked_usdc", 0),
+                    total_deposited=d.get("total_deposited", 0),
+                    total_withdrawn=d.get("total_withdrawn", 0),
+                    last_updated=datetime.fromisoformat(d["last_updated"]) if d.get("last_updated") else None,
+                )
+        return None
+    
     def get_balance(self, agent_id: str) -> AgentBalance:
         """获取余额"""
-        if agent_id not in self.balances:
-            self.balances[agent_id] = AgentBalance(agent_id=agent_id)
+        # 先查内存
+        if agent_id in self.balances:
+            return self.balances[agent_id]
+        
+        # 从 Redis 加载
+        balance = self._load_balance_from_redis(agent_id)
+        if balance:
+            self.balances[agent_id] = balance
+            return balance
+        
+        # 新建
+        self.balances[agent_id] = AgentBalance(agent_id=agent_id)
         return self.balances[agent_id]
     
     def deposit(self, agent_id: str, amount: float) -> AgentBalance:
@@ -155,6 +212,7 @@ class SettlementEngine:
         balance.balance_usdc += amount
         balance.total_deposited += amount
         balance.last_updated = datetime.now()
+        self._save_balance_to_redis(balance)
         return balance
     
     def withdraw(self, agent_id: str, amount: float) -> bool:
@@ -165,6 +223,7 @@ class SettlementEngine:
         balance.balance_usdc -= amount
         balance.total_withdrawn += amount
         balance.last_updated = datetime.now()
+        self._save_balance_to_redis(balance)
         return True
     
     async def settle_internal(
@@ -253,7 +312,7 @@ class SettlementEngine:
         
         if self.simulation_mode:
             # 模拟链上交易
-            await asyncio.sleep(0.5)  # 模拟延迟
+            await asyncio.sleep(0.05)  # 模拟延迟 (优化: 50ms)
             
             # 生成模拟 tx hash
             tx_data = f"{from_agent}:{to_agent}:{amount}:{datetime.now().isoformat()}"

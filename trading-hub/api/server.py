@@ -28,7 +28,7 @@ def to_float(d: Decimal) -> float:
 
 logger = logging.getLogger(__name__)
 
-from db.store import store
+from db.redis_store import store
 from api.models import IntentType, IntentStatus, AgentStatus
 from services.price_feed import PriceFeed, price_feed
 from services.pnl_tracker import pnl_tracker
@@ -126,7 +126,7 @@ class RateLimiter:
         self.global_requests.append(now)
         return True, ""
 
-rate_limiter = RateLimiter(per_agent_limit=10, global_limit=500)
+rate_limiter = RateLimiter(per_agent_limit=50, global_limit=1000)
 
 # === 并发连接限制 ===
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -196,9 +196,40 @@ manager = ConnectionManager()
 # === Request Models ===
 
 class RegisterRequest(BaseModel):
-    wallet_address: str
-    display_name: Optional[str] = None
+    wallet_address: str = Field(..., min_length=1, description="Wallet address (non-empty)")
+    display_name: Optional[str] = Field(None, max_length=50, description="Display name (max 50 chars, no HTML)")
     twitter_handle: Optional[str] = None
+
+    @field_validator('wallet_address')
+    @classmethod
+    def validate_wallet(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Wallet address cannot be empty')
+        if not v.startswith('0x') and len(v) < 10:
+            raise ValueError('Invalid wallet address format')
+        return v.strip()
+
+    @field_validator('display_name')
+    @classmethod
+    def sanitize_display_name(cls, v):
+        """过滤 HTML/script 标签和 JS 代码，防止 XSS"""
+        if v is None:
+            return v
+        import re
+        # 移除所有 HTML 标签
+        v = re.sub(r'<[^>]*>', '', v)
+        # 移除危险字符序列
+        v = re.sub(r'[&<>"\'/\\]', '', v)
+        # 移除 JS 函数调用模式 (alert, prompt, confirm, eval, Function 等)
+        v = re.sub(r'\b(alert|prompt|confirm|eval|Function|setTimeout|setInterval|constructor)\s*\(.*?\)', '', v, flags=re.IGNORECASE)
+        # 移除 javascript: 协议
+        v = re.sub(r'javascript\s*:', '', v, flags=re.IGNORECASE)
+        # 移除 on* 事件处理器
+        v = re.sub(r'\bon\w+\s*=', '', v, flags=re.IGNORECASE)
+        v = v.strip()
+        if not v:
+            raise ValueError('Display name cannot be empty after sanitization')
+        return v[:50]
 
 
 # 支持的交易对 - 从环境变量读取或使用默认值
@@ -215,7 +246,7 @@ class IntentRequest(BaseModel):
     intent_type: str  # "long" | "short" - 会被验证转为 IntentType
     asset: str = "ETH-PERP"
     size_usdc: float = Field(default=100, gt=0, description="Size must be > 0")
-    leverage: int = Field(default=1, ge=1, le=20, description="Leverage 1-20x (max 20x)")
+    leverage: int = Field(default=1, ge=1, le=20, description="Leverage 1-20x")
     max_slippage: float = 0.005
     reason: str = ""  # AI 推理理由 (Agent Thoughts)
     
@@ -371,7 +402,16 @@ async def register_agent(req: RegisterRequest):
     注册 Agent (钱包签名)
     
     返回 Agent 信息和首个 API Key (只显示一次，请妥善保存)
+    如果钱包已注册，返回 409 Conflict
     """
+    # 检查钱包是否已注册
+    existing = store.get_agent_by_wallet(req.wallet_address)
+    if existing:
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Wallet already registered as {existing.agent_id}. Use your existing API key."
+        )
+    
     agent = store.create_agent(
         wallet_address=req.wallet_address,
         display_name=req.display_name,
@@ -641,9 +681,23 @@ async def create_intent(
                 leverage=req.leverage,
             )
             position_data = position.to_dict()
+
+            # 更新 Agent 统计 (开仓也算一次交易)
+            agent = store.get_agent(req.agent_id)
+            if agent:
+                store.update_agent(
+                    req.agent_id,
+                    total_trades=agent.total_trades + 1,
+                    total_volume=agent.total_volume + req.size_usdc
+                )
+
         except ValueError as e:
-            # 风控拒绝，但 Intent 已创建
-            position_data = {"error": str(e)}
+            # 风控拒绝 — Intent 已创建但持仓失败，返回明确失败
+            raise HTTPException(status_code=422, detail={
+                "message": f"Position rejected by risk control: {e}",
+                "intent_id": intent.intent_id,
+                "intent_status": "created",
+            })
     else:
         position_data = None
     
@@ -693,6 +747,39 @@ async def create_intent(
         "internal_match": internal_match.to_dict() if internal_match else None,
         "external_fills": [f.to_dict() for f in external_fills],
         "position": position_data,
+    }
+
+@app.get("/intents/stats")
+async def get_intent_stats():
+    """
+    获取 Intent 统计信息
+    """
+    all_intents = list(store.intents.values()) if hasattr(store, 'intents') else []
+    
+    total = len(all_intents)
+    open_count = sum(1 for i in all_intents if i.status.value == "open")
+    filled = sum(1 for i in all_intents if i.status.value == "filled")
+    cancelled = sum(1 for i in all_intents if i.status.value == "cancelled")
+    
+    # 按资产统计
+    by_asset = {}
+    for intent in all_intents:
+        asset = intent.asset
+        if asset not in by_asset:
+            by_asset[asset] = {"count": 0, "total_size": 0}
+        by_asset[asset]["count"] += 1
+        by_asset[asset]["total_size"] += intent.size_usdc
+    
+    # 总交易量
+    total_volume = sum(i.size_usdc for i in all_intents)
+    
+    return {
+        "total_intents": total,
+        "open": open_count,
+        "filled": filled,
+        "cancelled": cancelled,
+        "total_volume_usdc": total_volume,
+        "by_asset": by_asset,
     }
 
 @app.get("/intents/{intent_id}")
@@ -751,6 +838,12 @@ async def get_match(match_id: str):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    # 发送欢迎消息
+    await websocket.send_json({
+        "type": "connected",
+        "message": "Welcome to AI Perp DEX",
+        "timestamp": datetime.now().isoformat()
+    })
     try:
         while True:
             data = await websocket.receive_text()
@@ -810,7 +903,7 @@ class CreateSignalRequest(BaseModel):
     signal_type: str  # "price_above", "price_below", "price_change"
     target_value: float = Field(..., gt=0, description="Target price must be positive")
     stake_amount: float = Field(..., gt=0, le=1000, description="Stake 0-1000 USDC")
-    duration_hours: int = Field(default=24, ge=1, le=168, description="Duration 1-168 hours")
+    duration_hours: float = Field(default=24, ge=0.01, le=168, description="Duration 0.01-168 hours (min ~36 seconds for testing)")
     
     @field_validator('asset')
     @classmethod
@@ -830,6 +923,7 @@ class CreateSignalRequest(BaseModel):
 class FadeSignalRequest(BaseModel):
     signal_id: str
     fader_id: str
+    stake_amount: float = Field(..., gt=0, description="Stake amount (must match signal creator's stake)")
 
 @app.post("/signals")
 async def create_signal(
@@ -924,7 +1018,7 @@ async def fade_signal(
         raise HTTPException(404, "Agent not found")
     
     try:
-        bet = signal_betting.fade_signal(req.signal_id, req.fader_id)
+        bet = signal_betting.fade_signal(req.signal_id, req.fader_id, req.stake_amount)
         
         # 广播
         await manager.broadcast({
@@ -1124,30 +1218,42 @@ async def startup_liquidation():
 
 
 @app.get("/positions/{agent_id}")
-async def get_positions(agent_id: str):
-    """获取 Agent 的持仓"""
+async def get_positions(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取 Agent 的持仓 (需要认证，只能查看自己的持仓)"""
+    # 验证只能查看自己的持仓
+    verify_agent_owns_resource(auth, agent_id, "position list")
+
     positions = position_manager.get_positions(agent_id)
-    
+
     # 更新价格 (使用同步缓存方法)
     for pos in positions:
         asset = pos.asset.replace("-PERP", "")
         price = price_feed.get_cached_price(asset)
         pos.update_pnl(price)
-    
+
     return {
         "agent_id": agent_id,
         "positions": [p.to_dict() for p in positions],
     }
 
 @app.get("/portfolio/{agent_id}")
-async def get_portfolio(agent_id: str):
-    """获取投资组合概览"""
+async def get_portfolio(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取投资组合概览 (需要认证，只能查看自己的组合)"""
+    # 验证只能查看自己的组合
+    verify_agent_owns_resource(auth, agent_id, "portfolio")
+
     # 先更新所有价格 (使用同步缓存方法)
     for pos in position_manager.get_positions(agent_id):
         asset = pos.asset.replace("-PERP", "")
         price = price_feed.get_cached_price(asset)
         pos.update_pnl(price)
-    
+
     return position_manager.get_portfolio_value(agent_id)
 
 class StopLossRequest(BaseModel):
@@ -1215,12 +1321,32 @@ async def close_position(
         else:
             price = price_data.price
         
+        # 保存入场价用于返回
+        entry_price = pos.entry_price
+        size_usdc = pos.size_usdc
+        
         pos = position_manager.close_position_manual(position_id, price)
+        
+        # 更新 Agent 统计 (交易次数 +1, 交易量累加)
+        agent = store.get_agent(auth.agent_id)
+        if agent:
+            store.update_agent(
+                auth.agent_id,
+                total_trades=agent.total_trades + 1,
+                total_volume=agent.total_volume + size_usdc,
+                pnl=agent.pnl + pos.realized_pnl
+            )
         
         return {
             "success": True,
             "position_id": position_id,
-            "close_price": price,
+            "result": {
+                "entry_price": entry_price,
+                "exit_price": price,
+                "realized_pnl": pos.realized_pnl,
+                "size_usdc": size_usdc,
+            },
+            "close_price": price,  # 保持向后兼容
             "pnl": pos.realized_pnl,
         }
     except ValueError as e:
@@ -1231,8 +1357,13 @@ async def close_position(
 # ==========================================
 
 @app.get("/alerts/{agent_id}")
-async def get_alerts(agent_id: str):
-    """获取风控告警"""
+async def get_alerts(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取风控告警 (需要认证，只能查看自己的告警)"""
+    verify_agent_owns_resource(auth, agent_id, "alerts")
+
     alerts = position_manager.get_alerts(agent_id)
     return {
         "agent_id": agent_id,
@@ -1290,10 +1421,13 @@ async def get_liquidation_stats():
 
 
 @app.get("/positions/{position_id}/health")
-async def check_position_health(position_id: str):
+async def check_position_health(
+    position_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
     """
-    检查仓位健康度
-    
+    检查仓位健康度 (需要认证，只能查看自己的仓位)
+
     返回:
     - health_ratio: 健康度比例
     - health_status: safe/warning/danger
@@ -1303,7 +1437,9 @@ async def check_position_health(position_id: str):
     pos = position_manager.positions.get(position_id)
     if not pos:
         raise HTTPException(404, "Position not found")
-    
+
+    verify_agent_owns_resource(auth, pos.agent_id, "position health")
+
     return liquidation_engine.check_position_health(pos)
 
 
@@ -1461,8 +1597,13 @@ async def get_inbox(agent_id: str, limit: int = 50):
 # ==========================================
 
 @app.get("/balance/{agent_id}")
-async def get_balance(agent_id: str):
-    """获取余额"""
+async def get_balance(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取余额 (需要认证，只能查看自己的余额)"""
+    verify_agent_owns_resource(auth, agent_id, "balance")
+
     balance = settlement_engine.get_balance(agent_id)
     return balance.to_dict()
 
@@ -1509,6 +1650,66 @@ async def withdraw(
         raise HTTPException(400, "Insufficient balance")
     balance = settlement_engine.get_balance(auth.agent_id)
     return {"success": True, "balance": balance.to_dict()}
+
+# ============ Paper Trading Faucet ============
+
+FAUCET_AMOUNT = 10000.0  # $10,000 test USDC
+FAUCET_COOLDOWN = 86400  # 24 hours
+_faucet_claims: dict = {}  # agent_id -> last_claim_timestamp
+
+@app.post("/faucet")
+async def claim_faucet(auth: AgentAuth = Depends(verify_agent)):
+    """
+    领取测试 USDC (Paper Trading 水龙头)
+    
+    - 每个 Agent 每 24 小时可领取一次
+    - 每次领取 $10,000 测试 USDC
+    - 仅限 Paper Trading 模式
+    """
+    import time
+    now = time.time()
+    
+    # 检查冷却时间
+    last_claim = _faucet_claims.get(auth.agent_id, 0)
+    if now - last_claim < FAUCET_COOLDOWN:
+        remaining = int(FAUCET_COOLDOWN - (now - last_claim))
+        hours = remaining // 3600
+        minutes = (remaining % 3600) // 60
+        raise HTTPException(429, f"Faucet cooldown: {hours}h {minutes}m remaining")
+    
+    # 发放测试资金
+    balance = settlement_engine.deposit(auth.agent_id, FAUCET_AMOUNT)
+    position_manager.agent_balances[auth.agent_id] = balance.available
+    
+    # 记录领取时间
+    _faucet_claims[auth.agent_id] = now
+    
+    return {
+        "success": True,
+        "message": f"🚰 Claimed ${FAUCET_AMOUNT:,.0f} test USDC!",
+        "new_balance": balance.available,
+        "mode": "paper_trading",
+        "next_claim_in": "24 hours"
+    }
+
+@app.get("/faucet/status")
+async def faucet_status(auth: AgentAuth = Depends(verify_agent)):
+    """查看水龙头状态"""
+    import time
+    now = time.time()
+    last_claim = _faucet_claims.get(auth.agent_id, 0)
+    
+    if now - last_claim >= FAUCET_COOLDOWN:
+        return {"can_claim": True, "amount": FAUCET_AMOUNT}
+    else:
+        remaining = int(FAUCET_COOLDOWN - (now - last_claim))
+        return {
+            "can_claim": False,
+            "cooldown_remaining_seconds": remaining,
+            "amount": FAUCET_AMOUNT
+        }
+
+# ============ Transfer ============
 
 class TransferRequest(BaseModel):
     from_agent: str
@@ -1628,13 +1829,23 @@ async def shutdown_signal_betting():
     await signal_betting.stop_auto_settlement()
 
 @app.get("/risk/{agent_id}")
-async def get_risk_score(agent_id: str):
-    """获取风险评分"""
+async def get_risk_score(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取风险评分 (需要认证，只能查看自己的风险)"""
+    verify_agent_owns_resource(auth, agent_id, "risk score")
+
     return risk_manager.get_risk_score(agent_id)
 
 @app.get("/risk/{agent_id}/limits")
-async def get_risk_limits(agent_id: str):
-    """获取风险限额"""
+async def get_risk_limits(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取风险限额 (需要认证，只能查看自己的限额)"""
+    verify_agent_owns_resource(auth, agent_id, "risk limits")
+
     return risk_manager.get_limits(agent_id).to_dict()
 
 class RiskLimitsUpdate(BaseModel):
@@ -1660,8 +1871,14 @@ async def update_risk_limits(
     return {"success": True, "limits": limits.to_dict()}
 
 @app.get("/risk/{agent_id}/violations")
-async def get_risk_violations(agent_id: str, limit: int = 50):
-    """获取违规记录"""
+async def get_risk_violations(
+    agent_id: str,
+    limit: int = 50,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取违规记录 (需要认证，只能查看自己的违规)"""
+    verify_agent_owns_resource(auth, agent_id, "violations")
+
     violations = risk_manager.get_violations(agent_id, limit)
     return {"violations": [v.to_dict() for v in violations]}
 

@@ -46,7 +46,7 @@ async def make_request(
         async with session.request(method, url, json=json_data, headers=headers) as resp:
             try:
                 body = await resp.json()
-            except:
+            except Exception:
                 body = await resp.text()
             return resp.status, body
     except Exception as e:

@@ -139,7 +139,7 @@ class MoltbookAdapter(IntentAdapter):
                 if resp.status == 200:
                     data = await resp.json()
                     return data.get("posts", data.get("data", []))
-        except:
+        except Exception:
             pass
         return []
     
@@ -318,7 +318,7 @@ Intent ID: {intent.intent_id}
                             for w in data.get("wallets", [])
                         ],
                     )
-        except:
+        except Exception:
             pass
         
         return None

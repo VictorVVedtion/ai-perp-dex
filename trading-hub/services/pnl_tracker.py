@@ -13,7 +13,7 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass, field
 
 from services.price_feed import price_feed, Price
-from db.store import store
+from db.redis_store import store
 from api.models import Match
 
 @dataclass
@@ -120,11 +120,14 @@ class AgentPnL:
         }
 
 class PnLTracker:
-    """PnL 追踪器"""
-    
+    """PnL 追踪器 (Redis 持久化)"""
+
+    REDIS_KEY_PREFIX = "pnl:realized:"
+
     def __init__(self):
         # 缓存: agent_id -> realized_pnl
         self.realized_pnl: Dict[str, float] = {}
+        self._load_from_redis()
     
     async def get_agent_pnl(self, agent_id: str) -> AgentPnL:
         """获取 Agent 的完整盈亏"""
@@ -171,9 +174,33 @@ class PnLTracker:
         return agent_pnl
     
     def record_realized_pnl(self, agent_id: str, pnl: float):
-        """记录已实现盈亏"""
+        """记录已实现盈亏 (持久化到 Redis)"""
         current = self.realized_pnl.get(agent_id, 0.0)
         self.realized_pnl[agent_id] = current + pnl
+        self._save_to_redis(agent_id, self.realized_pnl[agent_id])
+
+    def _load_from_redis(self):
+        """从 Redis 恢复 realized_pnl"""
+        try:
+            if store.redis:
+                keys = store.redis.keys(f"{self.REDIS_KEY_PREFIX}*")
+                for key in keys:
+                    agent_id = key.replace(self.REDIS_KEY_PREFIX, "")
+                    val = store.redis.get(key)
+                    if val:
+                        self.realized_pnl[agent_id] = float(val)
+                if self.realized_pnl:
+                    print(f"📊 Loaded realized PnL for {len(self.realized_pnl)} agents from Redis")
+        except Exception:
+            pass  # Redis 不可用时使用内存
+
+    def _save_to_redis(self, agent_id: str, pnl: float):
+        """持久化单个 Agent 的 realized_pnl 到 Redis"""
+        try:
+            if store.redis:
+                store.redis.set(f"{self.REDIS_KEY_PREFIX}{agent_id}", str(pnl))
+        except Exception:
+            pass  # Redis 不可用时静默失败
     
     async def get_leaderboard_with_pnl(self, limit: int = 20) -> List[dict]:
         """获取带 PnL 的排行榜"""

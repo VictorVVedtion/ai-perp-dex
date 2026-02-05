@@ -136,7 +136,13 @@ class ExternalRouter:
     
     async def start(self):
         """启动路由器"""
-        self.session = aiohttp.ClientSession()
+        # 使用连接池优化并发性能
+        connector = aiohttp.TCPConnector(
+            limit=100,           # 总连接数限制
+            limit_per_host=30,   # 每个主机连接限制
+            ttl_dns_cache=300,   # DNS 缓存 5 分钟
+        )
+        self.session = aiohttp.ClientSession(connector=connector)
         print(f"🔀 External Router started (simulation={self.simulation_mode})")
     
     async def stop(self):
@@ -290,23 +296,54 @@ class ExternalRouter:
         
         return fill
     
+    # 价格缓存 (类级别)
+    _price_cache = {}
+    _cache_time = 0
+    _cache_ttl = 5  # 5秒缓存
+    
     async def _get_hl_price(self, asset: str) -> float:
-        """从 Hyperliquid 获取实时价格"""
+        """从 Hyperliquid 获取实时价格 (使用多级缓存)"""
+        import time as _time
+        now = _time.time()
+        
+        # 1. 检查本地缓存 (5秒有效)
+        if asset in self._price_cache and now - self._cache_time < self._cache_ttl:
+            return self._price_cache[asset]
+        
+        # 2. 尝试用全局 price_feed 缓存
         try:
-            # 使用官方 SDK
+            from services.price_feed import price_feed
+            if price_feed and price_feed._prices:
+                asset_perp = f"{asset}-PERP"
+                if asset_perp in price_feed._prices:
+                    price = price_feed._prices[asset_perp].get("price", 0)
+                    if price > 0:
+                        self._price_cache[asset] = price
+                        self._cache_time = now
+                        return price
+        except Exception:
+            pass
+        
+        # 3. 缓存未命中时才调用 API (并更新缓存)
+        try:
             from hyperliquid.info import Info
             from hyperliquid.utils import constants
             
             info = Info(constants.MAINNET_API_URL, skip_ws=True)
             mids = info.all_mids()
             
+            # 更新所有价格缓存
+            for k, v in mids.items():
+                self._price_cache[k] = float(v)
+            self._cache_time = now
+            
             if asset in mids:
                 return float(mids[asset])
         except Exception as e:
             print(f"⚠️ HL price error: {e}")
         
-        # 备用价格
-        defaults = {"BTC": 73000, "ETH": 2150, "SOL": 92}
+        # 4. 备用价格
+        defaults = {"BTC": 65000, "ETH": 1900, "SOL": 90}
         return defaults.get(asset, 100)
     
     def _update_stats(self, venue: str, volume: float, fee: float):

@@ -10,12 +10,29 @@ Signal Betting Service - Agent 之间的预测对赌
 """
 
 import asyncio
+import os
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, Dict, List
 import uuid
 import time
+
+# Redis 持久化
+_redis_client = None
+def get_redis():
+    global _redis_client
+    if _redis_client is None and os.environ.get("USE_REDIS", "true").lower() == "true":
+        try:
+            import redis
+            redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+            _redis_client = redis.from_url(redis_url, decode_responses=True)
+            _redis_client.ping()
+        except Exception as e:
+            print(f"⚠️ SignalBetting Redis connection failed: {e}")
+            _redis_client = False
+    return _redis_client if _redis_client else None
 
 
 class SignalType(Enum):
@@ -106,6 +123,121 @@ class SignalBettingService:
             "total_volume": 0.0,
             "protocol_fees": 0.0,
         }
+        
+        # 从 Redis 加载
+        self._load_from_redis()
+    
+    def _save_signal_to_redis(self, signal: Signal):
+        """保存 Signal 到 Redis"""
+        r = get_redis()
+        if r:
+            data = {
+                "signal_id": signal.signal_id,
+                "creator_id": signal.creator_id,
+                "asset": signal.asset,
+                "signal_type": signal.signal_type.value,
+                "target_value": signal.target_value,
+                "stake_amount": signal.stake_amount,
+                "expires_at": signal.expires_at.isoformat(),
+                "created_at": signal.created_at.isoformat(),
+                "created_price": signal.created_price,
+                "status": signal.status.value,
+                "fader_id": signal.fader_id,
+                "matched_at": signal.matched_at.isoformat() if signal.matched_at else None,
+                "settled_at": signal.settled_at.isoformat() if signal.settled_at else None,
+                "settlement_price": signal.settlement_price,
+                "winner_id": signal.winner_id,
+                "payout": signal.payout,
+            }
+            r.hset("perpdex:signals", signal.signal_id, json.dumps(data))
+            if signal.status == SignalStatus.OPEN:
+                r.sadd("perpdex:signals:open", signal.signal_id)
+            else:
+                r.srem("perpdex:signals:open", signal.signal_id)
+    
+    def _save_bet_to_redis(self, bet: Bet):
+        """保存 Bet 到 Redis"""
+        r = get_redis()
+        if r:
+            data = {
+                "bet_id": bet.bet_id,
+                "signal_id": bet.signal_id,
+                "creator_id": bet.creator_id,
+                "fader_id": bet.fader_id,
+                "asset": bet.asset,
+                "signal_type": bet.signal_type.value,
+                "target_value": bet.target_value,
+                "stake_per_side": bet.stake_per_side,
+                "total_pot": bet.total_pot,
+                "expires_at": bet.expires_at.isoformat(),
+                "created_at": bet.created_at.isoformat(),
+                "status": bet.status,
+                "settlement_price": bet.settlement_price,
+                "winner_id": bet.winner_id,
+                "settled_at": bet.settled_at.isoformat() if bet.settled_at else None,
+            }
+            r.hset("perpdex:bets", bet.bet_id, json.dumps(data))
+    
+    def _load_from_redis(self):
+        """从 Redis 加载数据"""
+        r = get_redis()
+        if not r:
+            return
+        
+        # 加载 Signals
+        signals_data = r.hgetall("perpdex:signals")
+        for data_str in signals_data.values():
+            try:
+                d = json.loads(data_str)
+                signal = Signal(
+                    signal_id=d["signal_id"],
+                    creator_id=d["creator_id"],
+                    asset=d["asset"],
+                    signal_type=SignalType(d["signal_type"]),
+                    target_value=d["target_value"],
+                    stake_amount=d["stake_amount"],
+                    expires_at=datetime.fromisoformat(d["expires_at"]),
+                    created_at=datetime.fromisoformat(d["created_at"]),
+                    created_price=d.get("created_price", 0),
+                    status=SignalStatus(d["status"]),
+                    fader_id=d.get("fader_id"),
+                    matched_at=datetime.fromisoformat(d["matched_at"]) if d.get("matched_at") else None,
+                    settled_at=datetime.fromisoformat(d["settled_at"]) if d.get("settled_at") else None,
+                    settlement_price=d.get("settlement_price"),
+                    winner_id=d.get("winner_id"),
+                    payout=d.get("payout"),
+                )
+                self.signals[signal.signal_id] = signal
+            except Exception as e:
+                print(f"⚠️ Failed to load signal: {e}")
+        
+        # 加载 Bets
+        bets_data = r.hgetall("perpdex:bets")
+        for data_str in bets_data.values():
+            try:
+                d = json.loads(data_str)
+                bet = Bet(
+                    bet_id=d["bet_id"],
+                    signal_id=d["signal_id"],
+                    creator_id=d["creator_id"],
+                    fader_id=d["fader_id"],
+                    asset=d["asset"],
+                    signal_type=SignalType(d["signal_type"]),
+                    target_value=d["target_value"],
+                    stake_per_side=d["stake_per_side"],
+                    total_pot=d["total_pot"],
+                    expires_at=datetime.fromisoformat(d["expires_at"]),
+                    created_at=datetime.fromisoformat(d["created_at"]),
+                    status=d["status"],
+                    settlement_price=d.get("settlement_price"),
+                    winner_id=d.get("winner_id"),
+                    settled_at=datetime.fromisoformat(d["settled_at"]) if d.get("settled_at") else None,
+                )
+                self.bets[bet.bet_id] = bet
+            except Exception as e:
+                print(f"⚠️ Failed to load bet: {e}")
+        
+        print(f"📊 Loaded {len(self.signals)} signals, {len(self.bets)} bets from Redis")
     
     def create_signal(
         self,
@@ -114,7 +246,7 @@ class SignalBettingService:
         signal_type: SignalType,
         target_value: float,
         stake_amount: float,
-        duration_hours: int = 24,
+        duration_hours: float = 24,
         current_price: float = 0.0,  # 当前价格 (用于 PRICE_CHANGE 类型)
     ) -> Signal:
         """
@@ -129,6 +261,18 @@ class SignalBettingService:
             raise ValueError(f"Minimum stake is ${self.MIN_STAKE}")
         if stake_amount > self.MAX_STAKE:
             raise ValueError(f"Maximum stake is ${self.MAX_STAKE}")
+        
+        # 🔥 扣除创建者押金
+        from services.settlement import settlement_engine
+        balance = settlement_engine.get_balance(creator_id)
+        if balance.available < stake_amount:
+            raise ValueError(f"Insufficient balance: ${balance.available:.2f} < ${stake_amount:.2f}")
+        
+        # 扣款 (使用 withdraw)
+        success = settlement_engine.withdraw(creator_id, stake_amount)
+        if not success:
+            raise ValueError("Failed to deduct stake")
+        print(f"💸 Deducted ${stake_amount:.2f} from {creator_id} for signal creation")
         
         signal_id = f"sig_{uuid.uuid4().hex[:12]}"
         expires_at = datetime.now() + timedelta(hours=duration_hours)
@@ -146,10 +290,11 @@ class SignalBettingService:
         
         self.signals[signal_id] = signal
         self.stats["total_signals"] += 1
+        self._save_signal_to_redis(signal)
         
         return signal
     
-    def fade_signal(self, signal_id: str, fader_id: str) -> Bet:
+    def fade_signal(self, signal_id: str, fader_id: str, stake_amount: float = None) -> Bet:
         """
         Fade 一个 Signal (对赌)
         
@@ -168,6 +313,22 @@ class SignalBettingService:
         if datetime.now() > signal.expires_at:
             signal.status = SignalStatus.EXPIRED
             raise ValueError("Signal has expired")
+        
+        # 押注金额必须匹配 Signal 创建者的金额
+        required_stake = signal.stake_amount
+        if stake_amount is not None and stake_amount != required_stake:
+            raise ValueError(f"Stake must match signal creator's stake: ${required_stake:.2f}")
+        
+        # 🔥 扣除 Fader 押金
+        from services.settlement import settlement_engine
+        balance = settlement_engine.get_balance(fader_id)
+        if balance.available < required_stake:
+            raise ValueError(f"Insufficient balance: ${balance.available:.2f} < ${required_stake:.2f}")
+        
+        success = settlement_engine.withdraw(fader_id, required_stake)
+        if not success:
+            raise ValueError("Failed to deduct stake")
+        print(f"💸 Deducted ${required_stake:.2f} from {fader_id} for fade")
         
         # 创建 Bet
         bet_id = f"bet_{uuid.uuid4().hex[:12]}"
@@ -196,6 +357,10 @@ class SignalBettingService:
         self.stats["total_bets"] += 1
         self.stats["total_volume"] += total_pot
         
+        # 持久化到 Redis
+        self._save_signal_to_redis(signal)
+        self._save_bet_to_redis(bet)
+        
         return bet
     
     async def settle_bet(self, bet_id: str, settlement_price: float = None) -> Bet:
@@ -214,7 +379,10 @@ class SignalBettingService:
         # 获取结算价格
         if settlement_price is None:
             if self.price_feed:
-                settlement_price = self.price_feed.get_price(bet.asset.replace("-PERP", ""))
+                price_obj = await self.price_feed.get_price(bet.asset.replace("-PERP", ""))
+                settlement_price = price_obj.price if price_obj else None
+                if not settlement_price:
+                    raise ValueError("Could not get settlement price")
             else:
                 raise ValueError("No settlement price provided")
         
@@ -241,6 +409,22 @@ class SignalBettingService:
         signal.settled_at = datetime.now()
         
         self.stats["protocol_fees"] += protocol_fee
+
+        # 🔥 发放奖金给赢家 + 记入协议费
+        try:
+            from services.settlement import settlement_engine
+            settlement_engine.deposit(winner_id, payout)
+            print(f"💰 Payout ${payout:.2f} to {winner_id}")
+
+            # 协议费记入 treasury 账户（确保资金核算闭环）
+            settlement_engine.deposit("protocol_treasury", protocol_fee)
+            print(f"🏦 Protocol fee ${protocol_fee:.2f} credited to treasury")
+        except Exception as e:
+            print(f"⚠️ Failed to payout: {e}")
+        
+        # 持久化到 Redis
+        self._save_signal_to_redis(signal)
+        self._save_bet_to_redis(bet)
         
         return bet
     
@@ -312,6 +496,31 @@ class SignalBettingService:
         }
 
 
+    async def refund_expired_signals(self) -> int:
+        """
+        退回未匹配到期的 Signal 押金
+        """
+        from services.settlement import settlement_engine
+        now = datetime.now()
+        refunded = 0
+        
+        for signal in list(self.signals.values()):
+            if signal.status != SignalStatus.OPEN:
+                continue
+            
+            if now >= signal.expires_at:
+                try:
+                    # 退回押金给创建者
+                    settlement_engine.deposit(signal.creator_id, signal.stake_amount)
+                    signal.status = SignalStatus.EXPIRED
+                    self._save_signal_to_redis(signal)
+                    refunded += 1
+                    print(f"💸 Refunded ${signal.stake_amount:.2f} to {signal.creator_id} (signal expired)")
+                except Exception as e:
+                    print(f"⚠️ Failed to refund signal {signal.signal_id}: {e}")
+        
+        return refunded
+    
     async def auto_settle_expired(self) -> List[Bet]:
         """
         自动结算所有到期的 Bets
@@ -320,6 +529,11 @@ class SignalBettingService:
         """
         now = datetime.now()
         settled = []
+        
+        # 先处理未匹配的到期 Signals (退款)
+        refunded = await self.refund_expired_signals()
+        if refunded:
+            print(f"💸 Refunded {refunded} expired signals")
         
         for bet in list(self.bets.values()):
             if bet.status != "pending":
@@ -365,4 +579,6 @@ class SignalBettingService:
 
 
 # 单例
-signal_betting = SignalBettingService()
+# 导入 price_feed 并注入
+from services.price_feed import price_feed as _price_feed
+signal_betting = SignalBettingService(price_feed=_price_feed)

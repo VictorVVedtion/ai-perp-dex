@@ -116,7 +116,7 @@ class StressTest:
             timeout = aiohttp.ClientTimeout(total=5)
             async with session.get(f"{BASE_URL}/health", timeout=timeout) as resp:
                 return resp.status == 200
-        except:
+        except Exception:
             return False
 
     async def register_agents(self, session: aiohttp.ClientSession):

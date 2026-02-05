@@ -77,11 +77,12 @@ class APIKey:
 
 
 class APIKeyStore:
-    """API Key 存储 (内存版，生产环境用 Redis/DB)"""
+    """API Key 存储 (内存版)"""
     
     def __init__(self):
         self.keys: Dict[str, APIKey] = {}  # key_id -> APIKey
         self._agent_keys: Dict[str, List[str]] = {}  # agent_id -> [key_ids]
+        self._hash_to_key: Dict[str, str] = {}  # key_hash -> key_id
         
     def _hash_key(self, api_key: str) -> str:
         """Hash API key for storage"""
@@ -94,13 +95,7 @@ class APIKeyStore:
         scopes: List[str] = None,
         expires_in_days: int = None
     ) -> tuple:
-        """
-        创建新 API Key
-        
-        Returns:
-            (raw_key, APIKey) - raw_key 只返回一次，需要用户保存
-        """
-        # 生成 key: th_<agent_prefix>_<random>
+        """创建新 API Key"""
         agent_prefix = agent_id.replace("agent_", "")[:4]
         random_part = secrets.token_urlsafe(24)
         raw_key = f"th_{agent_prefix}_{random_part}"
@@ -122,6 +117,7 @@ class APIKeyStore:
         )
         
         self.keys[key_id] = api_key
+        self._hash_to_key[key_hash] = key_id
         
         if agent_id not in self._agent_keys:
             self._agent_keys[agent_id] = []
@@ -130,24 +126,23 @@ class APIKeyStore:
         return raw_key, api_key
     
     def validate_key(self, raw_key: str) -> Optional[APIKey]:
-        """验证 API key，返回对应的 APIKey 或 None"""
+        """验证 API key"""
         key_hash = self._hash_key(raw_key)
+        key_id = self._hash_to_key.get(key_hash)
+        if not key_id:
+            return None
         
-        for api_key in self.keys.values():
-            if api_key.key_hash == key_hash:
-                # 检查是否过期
-                if api_key.expires_at and datetime.now() > api_key.expires_at:
-                    return None
-                
-                # 检查是否激活
-                if not api_key.is_active:
-                    return None
-                
-                # 更新最后使用时间
-                api_key.last_used = datetime.now()
-                return api_key
+        api_key = self.keys.get(key_id)
+        if not api_key:
+            return None
+            
+        if api_key.expires_at and datetime.now() > api_key.expires_at:
+            return None
+        if not api_key.is_active:
+            return None
         
-        return None
+        api_key.last_used = datetime.now()
+        return api_key
     
     def get_agent_keys(self, agent_id: str) -> List[APIKey]:
         """获取 Agent 的所有 API keys"""
@@ -155,11 +150,10 @@ class APIKeyStore:
         return [self.keys[kid] for kid in key_ids if kid in self.keys]
     
     def revoke_key(self, key_id: str, agent_id: str) -> bool:
-        """撤销 API key (需要是 key 的所有者)"""
+        """撤销 API key"""
         api_key = self.keys.get(key_id)
         if not api_key or api_key.agent_id != agent_id:
             return False
-        
         api_key.is_active = False
         return True
     
@@ -168,15 +162,161 @@ class APIKeyStore:
         api_key = self.keys.get(key_id)
         if not api_key or api_key.agent_id != agent_id:
             return False
-        
         del self.keys[key_id]
+        if api_key.key_hash in self._hash_to_key:
+            del self._hash_to_key[api_key.key_hash]
         if agent_id in self._agent_keys:
             self._agent_keys[agent_id].remove(key_id)
         return True
 
 
-# 全局 API Key 存储
-api_key_store = APIKeyStore()
+class RedisAPIKeyStore(APIKeyStore):
+    """Redis 持久化版 API Key 存储"""
+    
+    KEY_PREFIX = "perpdex:api_keys:"
+    
+    def __init__(self, redis_client=None):
+        super().__init__()
+        self._redis = redis_client
+        
+    @property
+    def redis(self):
+        if self._redis is None:
+            import redis
+            import os
+            redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+            self._redis = redis.from_url(redis_url, decode_responses=True)
+        return self._redis
+    
+    def _key(self, *parts) -> str:
+        return self.KEY_PREFIX + ":".join(parts)
+    
+    def create_key(self, agent_id: str, name: str = "default", 
+                   scopes: List[str] = None, expires_in_days: int = None) -> tuple:
+        """创建新 API Key (持久化到 Redis)"""
+        raw_key, api_key = super().create_key(agent_id, name, scopes, expires_in_days)
+        
+        # 持久化到 Redis
+        key_data = {
+            "key_id": api_key.key_id,
+            "agent_id": api_key.agent_id,
+            "key_hash": api_key.key_hash,
+            "name": api_key.name,
+            "scopes": ",".join(api_key.scopes),
+            "created_at": api_key.created_at.isoformat(),
+            "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else "",
+            "is_active": "1" if api_key.is_active else "0",
+        }
+        self.redis.hset(self._key("keys"), api_key.key_id, json.dumps(key_data))
+        self.redis.hset(self._key("hashes"), api_key.key_hash, api_key.key_id)
+        self.redis.sadd(self._key("agent", agent_id), api_key.key_id)
+        
+        return raw_key, api_key
+    
+    def validate_key(self, raw_key: str) -> Optional[APIKey]:
+        """验证 API key (从 Redis 查询)"""
+        key_hash = self._hash_key(raw_key)
+        
+        # 先查内存缓存
+        if key_hash in self._hash_to_key:
+            return super().validate_key(raw_key)
+        
+        # 从 Redis 查询
+        key_id = self.redis.hget(self._key("hashes"), key_hash)
+        if not key_id:
+            return None
+        
+        key_data = self.redis.hget(self._key("keys"), key_id)
+        if not key_data:
+            return None
+        
+        data = json.loads(key_data)
+        
+        # 检查过期
+        if data.get("expires_at"):
+            expires_at = datetime.fromisoformat(data["expires_at"])
+            if datetime.now() > expires_at:
+                return None
+        
+        # 检查激活
+        if data.get("is_active") == "0":
+            return None
+        
+        # 构建 APIKey 对象并缓存
+        api_key = APIKey(
+            key_id=data["key_id"],
+            agent_id=data["agent_id"],
+            key_hash=data["key_hash"],
+            name=data["name"],
+            scopes=data["scopes"].split(",") if data["scopes"] else ["read", "write"],
+            created_at=datetime.fromisoformat(data["created_at"]),
+            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            is_active=data.get("is_active") != "0",
+        )
+        
+        # 缓存到内存
+        self.keys[key_id] = api_key
+        self._hash_to_key[key_hash] = key_id
+        
+        api_key.last_used = datetime.now()
+        return api_key
+    
+    def get_agent_keys(self, agent_id: str) -> List[APIKey]:
+        """获取 Agent 的所有 API keys"""
+        key_ids = self.redis.smembers(self._key("agent", agent_id))
+        keys = []
+        for key_id in key_ids:
+            key_data = self.redis.hget(self._key("keys"), key_id)
+            if key_data:
+                data = json.loads(key_data)
+                keys.append(APIKey(
+                    key_id=data["key_id"],
+                    agent_id=data["agent_id"],
+                    key_hash=data["key_hash"],
+                    name=data["name"],
+                    scopes=data["scopes"].split(",") if data["scopes"] else ["read", "write"],
+                    created_at=datetime.fromisoformat(data["created_at"]),
+                    expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+                    is_active=data.get("is_active") != "0",
+                ))
+        return keys
+    
+    def revoke_key(self, key_id: str, agent_id: str) -> bool:
+        """撤销 API key"""
+        key_data = self.redis.hget(self._key("keys"), key_id)
+        if not key_data:
+            return False
+        
+        data = json.loads(key_data)
+        if data["agent_id"] != agent_id:
+            return False
+        
+        data["is_active"] = "0"
+        self.redis.hset(self._key("keys"), key_id, json.dumps(data))
+        
+        # 清除内存缓存
+        if key_id in self.keys:
+            del self.keys[key_id]
+        if data["key_hash"] in self._hash_to_key:
+            del self._hash_to_key[data["key_hash"]]
+        
+        return True
+
+
+# 根据环境选择 API Key 存储
+import os
+_use_redis = os.environ.get("USE_REDIS", "true").lower() == "true"
+
+if _use_redis:
+    try:
+        api_key_store = RedisAPIKeyStore()
+        # 测试连接
+        api_key_store.redis.ping()
+    except Exception as e:
+        print(f"⚠️ Redis API key store failed, using memory: {e}")
+        api_key_store = APIKeyStore()
+else:
+    api_key_store = APIKeyStore()
 
 
 # JWT 相关配置 (自包含实现，无需外部库)

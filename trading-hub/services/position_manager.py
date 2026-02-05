@@ -6,6 +6,8 @@ Position Manager - 持仓管理 + 止盈止损 + 风控
 
 import asyncio
 import logging
+import os
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, List, Callable
@@ -13,6 +15,21 @@ from enum import Enum
 import uuid
 
 logger = logging.getLogger(__name__)
+
+# Redis 持久化
+_redis_client = None
+def get_redis():
+    global _redis_client
+    if _redis_client is None and os.environ.get("USE_REDIS", "true").lower() == "true":
+        try:
+            import redis
+            redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+            _redis_client = redis.from_url(redis_url, decode_responses=True)
+            _redis_client.ping()
+        except Exception as e:
+            logger.warning(f"PositionManager Redis connection failed: {e}")
+            _redis_client = False
+    return _redis_client if _redis_client else None
 
 
 class PositionSide(Enum):
@@ -142,13 +159,18 @@ class PositionManager:
     4. 风控告警
     """
     
-    # 支持的资产白名单
-    SUPPORTED_ASSETS = {"BTC-PERP", "ETH-PERP", "SOL-PERP"}
+    # 支持的资产白名单 (与 server.VALID_ASSETS / external_router.ASSET_MAP 保持同步)
+    SUPPORTED_ASSETS = {
+        "BTC-PERP", "ETH-PERP", "SOL-PERP",   # 主流
+        "DOGE-PERP", "PEPE-PERP", "WIF-PERP",  # Meme
+        "ARB-PERP", "OP-PERP", "SUI-PERP",     # L2
+        "AVAX-PERP", "LINK-PERP", "AAVE-PERP", # DeFi
+    }
     
     # 风控参数
     LIQUIDATION_WARNING_THRESHOLD = 0.5  # 亏损 50% 保证金时警告
     DAILY_LOSS_LIMIT_PCT = 0.1  # 每日最大亏损 10%
-    MAX_LEVERAGE = 100
+    MAX_LEVERAGE = 20
     MAX_POSITION_SIZE = 10000  # 单笔最大 $10000
     
     def __init__(self, price_feed=None):
@@ -168,6 +190,87 @@ class PositionManager:
         # 后台任务
         self._running = False
         self._monitor_task = None
+        
+        # 从 Redis 加载
+        self._load_from_redis()
+    
+    def _save_position_to_redis(self, position: Position):
+        """保存持仓到 Redis"""
+        r = get_redis()
+        if r:
+            data = {
+                "position_id": position.position_id,
+                "agent_id": position.agent_id,
+                "asset": position.asset,
+                "side": position.side.value,
+                "size_usdc": position.size_usdc,
+                "entry_price": position.entry_price,
+                "leverage": position.leverage,
+                "created_at": position.created_at.isoformat(),
+                "stop_loss": position.stop_loss,
+                "take_profit": position.take_profit,
+                "current_price": position.current_price,
+                "unrealized_pnl": position.unrealized_pnl,
+                "unrealized_pnl_pct": position.unrealized_pnl_pct,
+                "liquidation_price": position.liquidation_price,
+                "is_open": position.is_open,
+                "closed_at": position.closed_at.isoformat() if position.closed_at else None,
+                "close_price": position.close_price,
+                "realized_pnl": position.realized_pnl,
+                "close_reason": position.close_reason,
+            }
+            r.hset("perpdex:positions", position.position_id, json.dumps(data))
+            if position.is_open:
+                r.sadd(f"perpdex:positions:agent:{position.agent_id}", position.position_id)
+            else:
+                r.srem(f"perpdex:positions:agent:{position.agent_id}", position.position_id)
+    
+    def _delete_position_from_redis(self, position: Position):
+        """从 Redis 删除持仓"""
+        r = get_redis()
+        if r:
+            r.hdel("perpdex:positions", position.position_id)
+            r.srem(f"perpdex:positions:agent:{position.agent_id}", position.position_id)
+    
+    def _load_from_redis(self):
+        """从 Redis 加载持仓"""
+        r = get_redis()
+        if not r:
+            return
+        
+        positions_data = r.hgetall("perpdex:positions")
+        loaded = 0
+        for data_str in positions_data.values():
+            try:
+                d = json.loads(data_str)
+                position = Position(
+                    position_id=d["position_id"],
+                    agent_id=d["agent_id"],
+                    asset=d["asset"],
+                    side=PositionSide(d["side"]),
+                    size_usdc=d["size_usdc"],
+                    entry_price=d["entry_price"],
+                    leverage=d["leverage"],
+                    created_at=datetime.fromisoformat(d["created_at"]),
+                    stop_loss=d.get("stop_loss"),
+                    take_profit=d.get("take_profit"),
+                    current_price=d.get("current_price", 0),
+                    unrealized_pnl=d.get("unrealized_pnl", 0),
+                    unrealized_pnl_pct=d.get("unrealized_pnl_pct", 0),
+                    liquidation_price=d.get("liquidation_price", 0),
+                    is_open=d.get("is_open", True),
+                    closed_at=datetime.fromisoformat(d["closed_at"]) if d.get("closed_at") else None,
+                    close_price=d.get("close_price"),
+                    realized_pnl=d.get("realized_pnl"),
+                    close_reason=d.get("close_reason"),
+                )
+                self.positions[position.position_id] = position
+                loaded += 1
+            except Exception as e:
+                logger.warning(f"Failed to load position: {e}")
+        
+        if loaded > 0:
+            logger.info(f"📊 Loaded {loaded} positions from Redis")
     
     async def start(self):
         """启动持仓监控"""
@@ -373,6 +476,7 @@ class PositionManager:
         
         position.update_pnl(entry_price)
         self.positions[position_id] = position
+        self._save_position_to_redis(position)
         
         return position
     
@@ -387,6 +491,9 @@ class PositionManager:
         # 更新每日 PnL
         agent_id = pos.agent_id
         self.agent_daily_pnl[agent_id] = self.agent_daily_pnl.get(agent_id, 0) + pos.realized_pnl
+        
+        # 持久化到 Redis
+        self._save_position_to_redis(pos)
         
         # 触发回调
         for cb in self._on_close_callbacks:

@@ -30,7 +30,7 @@ class AgentRiskLimits:
     # 仓位限制
     max_position_size: float = 10000  # 单笔最大 $10000
     max_total_exposure: float = 50000  # 总敞口最大 $50000
-    max_leverage: int = 50  # 最大杠杆
+    max_leverage: int = 20  # 最大杠杆 (与 PositionManager.MAX_LEVERAGE 保持一致)
     
     # 亏损限制
     max_daily_loss: float = 1000  # 每日最大亏损 $1000
@@ -266,6 +266,15 @@ class RiskManager:
         positions = self.position_manager.get_positions(agent_id)
         return sum(p.size_usdc for p in positions)
     
+    def _get_max_leverage(self, agent_id: str) -> float:
+        """获取当前最大使用杠杆"""
+        if not self.position_manager:
+            return 0
+        positions = self.position_manager.get_positions(agent_id)
+        if not positions:
+            return 0
+        return max(p.leverage for p in positions)
+
     def _get_daily_pnl(self, agent_id: str) -> float:
         """获取每日 PnL"""
         stats = self.daily_stats.get(agent_id, {})
@@ -374,15 +383,16 @@ class RiskManager:
     def get_risk_score(self, agent_id: str) -> dict:
         """获取风险评分"""
         limits = self.get_limits(agent_id)
-        
+
         # 各维度评分 (0-100, 越高越危险)
         exposure_score = min(100, self._get_total_exposure(agent_id) / limits.max_total_exposure * 100)
         loss_score = min(100, max(0, -self._get_daily_pnl(agent_id)) / limits.max_daily_loss * 100)
         drawdown_score = min(100, self._get_drawdown(agent_id) / limits.max_drawdown_pct * 100)
-        
-        # 综合评分
-        overall = (exposure_score + loss_score + drawdown_score) / 3
-        
+        leverage_score = min(100, self._get_max_leverage(agent_id) / limits.max_leverage * 100)
+
+        # 综合评分 (杠杆权重较高，因为杠杆直接放大风险)
+        overall = (exposure_score + loss_score + drawdown_score + leverage_score * 1.5) / 4.5
+
         if overall < 30:
             level = RiskLevel.LOW
         elif overall < 60:
@@ -391,7 +401,7 @@ class RiskManager:
             level = RiskLevel.HIGH
         else:
             level = RiskLevel.CRITICAL
-        
+
         return {
             "agent_id": agent_id,
             "overall_score": round(overall, 1),
@@ -400,6 +410,7 @@ class RiskManager:
                 "exposure": round(exposure_score, 1),
                 "daily_loss": round(loss_score, 1),
                 "drawdown": round(drawdown_score, 1),
+                "leverage": round(leverage_score, 1),
             },
         }
     
