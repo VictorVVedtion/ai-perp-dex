@@ -41,7 +41,10 @@ from middleware.auth import (
 app = FastAPI(title="Trading Hub", version="0.1.0")
 
 # CORS - 限制允许的来源 (生产环境应更严格)
-ALLOWED_ORIGINS = [
+# CORS 配置 - 从环境变量读取或使用默认值
+import os
+_cors_origins = os.environ.get("CORS_ORIGINS", "")
+ALLOWED_ORIGINS = _cors_origins.split(",") if _cors_origins else [
     "http://localhost:3000",      # 本地前端
     "http://localhost:8082",      # 本地 API
     "https://ai-perp-dex.vercel.app",  # 生产前端
@@ -60,22 +63,43 @@ from collections import defaultdict
 import time
 
 class RateLimiter:
-    """简单的内存限流器"""
+    """简单的内存限流器 (修复内存泄漏)"""
+    MAX_AGENTS = 10000  # 最大追踪 agent 数，防止内存泄漏
+    
     def __init__(self, per_agent_limit: int = 10, global_limit: int = 500, window_seconds: int = 1):
         self.per_agent_limit = per_agent_limit  # 每 Agent 每秒请求数
         self.global_limit = global_limit  # 全局每秒请求数
         self.window = window_seconds
         self.agent_requests: Dict[str, List[float]] = defaultdict(list)
         self.global_requests: List[float] = []
+        self._last_cleanup = time.time()
     
     def _cleanup(self, requests: List[float], now: float) -> List[float]:
         """清理过期请求"""
         cutoff = now - self.window
         return [t for t in requests if t > cutoff]
     
+    def _cleanup_agents(self, now: float):
+        """清理不活跃的 agent (防止内存泄漏)"""
+        if now - self._last_cleanup < 60:  # 每 60 秒清理一次
+            return
+        self._last_cleanup = now
+        cutoff = now - 300  # 5 分钟不活跃就清理
+        inactive = [k for k, v in self.agent_requests.items() if not v or max(v) < cutoff]
+        for k in inactive:
+            del self.agent_requests[k]
+        # 如果还是太多，清理最旧的
+        if len(self.agent_requests) > self.MAX_AGENTS:
+            sorted_agents = sorted(self.agent_requests.items(), key=lambda x: max(x[1]) if x[1] else 0)
+            for k, _ in sorted_agents[:len(self.agent_requests) - self.MAX_AGENTS]:
+                del self.agent_requests[k]
+    
     def check(self, agent_id: str = None) -> tuple[bool, str]:
         """检查是否允许请求"""
         now = time.time()
+        
+        # 定期清理不活跃 agent (防止内存泄漏)
+        self._cleanup_agents(now)
         
         # 全局限流
         self.global_requests = self._cleanup(self.global_requests, now)
@@ -144,7 +168,11 @@ class ConnectionManager:
         self.active_connections.append(websocket)
     
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        # 安全移除，避免竞态条件
+        try:
+            self.active_connections.remove(websocket)
+        except ValueError:
+            pass  # 已经被移除
     
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
