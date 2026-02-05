@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trading Hub Dashboard</title>
+    <title>Trading Hub - AI Agent Dark Pool</title>
     <style>
         :root {
             --bg-body: #0a0a0b;
@@ -11,9 +11,11 @@
             --bg-input: #1c1c1f;
             --text-primary: #ffffff;
             --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
             --primary: #6366f1;
             --success: #10b981;
             --danger: #ef4444;
+            --warning: #f59e0b;
             --border: #27272a;
             --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
         }
@@ -23,303 +25,701 @@
             background-color: var(--bg-body);
             color: var(--text-primary);
             font-family: var(--font-sans);
-            padding: 2rem;
             line-height: 1.5;
         }
 
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 1.5rem;
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-content {
             max-width: 1400px;
             margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--primary), var(--success));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .nav {
+            display: flex;
+            gap: 4px;
+        }
+        .nav-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 14px;
+            border: none;
+            background: none;
+            transition: all 0.2s;
+        }
+        .nav-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+        .nav-btn.active { background: var(--primary); color: white; }
+        .connect-btn {
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .connect-btn:hover { opacity: 0.9; }
+
+        /* Main */
+        .main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem 2rem;
+        }
+        .page { display: none; }
+        .page.active { display: block; }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        @media (max-width: 1024px) {
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
         }
 
-        .section {
+        /* Cards */
+        .card {
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 1.5rem;
         }
+        .card-title {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
 
-        h2 { font-size: 1.25rem; margin-bottom: 1.5rem; font-weight: 600; color: var(--text-primary); }
-
-        /* Section 1: Prices */
-        .prices-sec { grid-column: span 12; display: flex; gap: 1rem; flex-wrap: wrap; }
+        /* Prices */
+        .prices-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
         .price-card {
             flex: 1;
-            min-width: 200px;
-            background: rgba(255, 255, 255, 0.03);
-            padding: 1rem;
-            border-radius: 8px;
+            min-width: 180px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 12px;
+            padding: 1rem;
         }
-        .price-card .symbol { font-weight: 700; color: var(--text-secondary); }
-        .price-card .value { font-family: monospace; font-size: 1.1rem; }
+        .price-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .price-icon.btc { background: #f7931a22; color: #f7931a; }
+        .price-icon.eth { background: #627eea22; color: #627eea; }
+        .price-icon.sol { background: #00ffa322; color: #00ffa3; }
+        .price-value { font-size: 1.25rem; font-weight: 700; }
+        .price-label { font-size: 0.875rem; color: var(--text-secondary); }
 
-        /* Section 2: Stats */
-        .stats-sec { grid-column: span 4; }
-        .stat-item { margin-bottom: 1.5rem; }
+        /* Stats */
+        .stat-card { text-align: center; }
+        .stat-value { font-size: 1.75rem; font-weight: 700; margin-bottom: 4px; }
+        .stat-value.green { color: var(--success); }
+        .stat-value.purple { color: var(--primary); }
         .stat-label { font-size: 0.875rem; color: var(--text-secondary); }
-        .stat-value { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
 
-        /* Section 3: Trading Form */
-        .trade-sec { grid-column: span 4; }
+        /* Forms */
         .form-group { margin-bottom: 1rem; }
-        label { display: block; font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
-        input, select {
+        .form-label { display: block; font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 6px; }
+        .form-input, .form-select {
             width: 100%;
+            padding: 10px 12px;
             background: var(--bg-input);
             border: 1px solid var(--border);
-            color: white;
-            padding: 0.75rem;
             border-radius: 6px;
-            outline: none;
+            color: var(--text-primary);
+            font-size: 14px;
         }
-        input:focus { border-color: var(--primary); }
-        button {
-            width: 100%;
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 0.75rem;
+        .form-input:focus, .form-select:focus { outline: none; border-color: var(--primary); }
+        .btn {
+            padding: 10px 20px;
             border-radius: 6px;
             font-weight: 600;
             cursor: pointer;
+            border: none;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+        .btn:hover { opacity: 0.9; }
+        .btn-full { width: 100%; }
+        .btn-group { display: flex; gap: 8px; }
+        .btn-group .btn { flex: 1; }
+
+        /* Tables */
+        .table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        .table th { text-align: left; padding: 12px 8px; color: var(--text-secondary); font-weight: 500; border-bottom: 1px solid var(--border); }
+        .table td { padding: 12px 8px; border-bottom: 1px solid var(--border); }
+        .table tr:hover { background: var(--bg-input); }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge.long { background: #10b98122; color: var(--success); }
+        .badge.short { background: #ef444422; color: var(--danger); }
+        .badge.open { background: #3b82f622; color: #3b82f6; }
+        .badge.matched { background: #8b5cf622; color: #8b5cf6; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 4px; margin-bottom: 1rem; }
+        .tab {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 14px;
+            background: none;
+            border: none;
+        }
+        .tab.active { background: var(--bg-input); color: var(--text-primary); }
+
+        /* Signal Card */
+        .signal-card {
+            border-left: 3px solid var(--warning);
+            margin-bottom: 12px;
+        }
+        .signal-prediction { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+        .signal-meta { display: flex; gap: 16px; font-size: 0.875rem; color: var(--text-secondary); }
+
+        /* Toast */
+        .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; }
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 8px;
+            font-size: 14px;
+            animation: slideIn 0.3s;
+        }
+        .toast.success { border-left: 3px solid var(--success); }
+        .toast.error { border-left: 3px solid var(--danger); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* Result Box */
+        .result-box {
             margin-top: 1rem;
-            transition: opacity 0.2s;
+            padding: 1rem;
+            border-radius: 8px;
+            display: none;
         }
-        button:hover { opacity: 0.9; }
-
-        /* Section 4: Leaderboard */
-        .leaderboard-sec { grid-column: span 4; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-        th { text-align: left; color: var(--text-secondary); padding-bottom: 0.75rem; font-weight: 500; }
-        td { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
-        tr:last-child td { border-bottom: none; }
-        .pnl-up { color: var(--success); }
-        .pnl-down { color: var(--danger); }
-
-        @media (max-width: 1024px) {
-            .stats-sec, .trade-sec, .leaderboard-sec { grid-column: span 12; }
-        }
+        .result-box.success { background: #10b98115; border: 1px solid var(--success); display: block; }
+        .result-box.error { background: #ef444415; border: 1px solid var(--danger); display: block; }
     </style>
 </head>
 <body>
-
-<div class="dashboard-grid">
-    <!-- 1. Prices -->
-    <div class="section prices-sec" id="prices-container">
-        <div class="price-card">
-            <span class="symbol">BTC/USDC</span>
-            <span class="value" id="price-btc">loading...</span>
-        </div>
-        <div class="price-card">
-            <span class="symbol">ETH/USDC</span>
-            <span class="value" id="price-eth">loading...</span>
-        </div>
-        <div class="price-card">
-            <span class="symbol">SOL/USDC</span>
-            <span class="value" id="price-sol">loading...</span>
-        </div>
-    </div>
-
-    <!-- 2. Stats -->
-    <div class="section stats-sec">
-        <h2>System Stats</h2>
-        <div class="stat-item">
-            <div class="stat-label">Total 24h Volume</div>
-            <div class="stat-value" id="stat-volume">$0.00</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-label">Active Agents</div>
-            <div class="stat-value" id="stat-agents">0</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-label">Internal Match Rate</div>
-            <div class="stat-value pnl-up" id="stat-rate">100%</div>
-        </div>
-    </div>
-
-    <!-- 3. Trading Form -->
-    <div class="section trade-sec">
-        <h2>Execute Trade</h2>
-        <form id="trade-form">
-            <div class="form-group">
-                <label>Agent ID</label>
-                <input type="text" id="agent-id" value="manual_trader" required>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🔮</div>
+                <span>Trading Hub</span>
             </div>
-            <div class="form-group">
-                <label>Asset</label>
-                <select id="asset">
-                    <option value="ETH-PERP">Ethereum (ETH)</option>
-                    <option value="BTC-PERP">Bitcoin (BTC)</option>
-                    <option value="SOL-PERP">Solana (SOL)</option>
-                </select>
+            <nav class="nav">
+                <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+                <button class="nav-btn" data-page="trading">Trading</button>
+                <button class="nav-btn" data-page="signals">Signals</button>
+                <button class="nav-btn" data-page="agents">Agents</button>
+            </nav>
+            <button class="connect-btn" id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Dashboard -->
+        <div class="page active" id="page-dashboard">
+            <!-- Prices -->
+            <div class="prices-row">
+                <div class="card price-card">
+                    <div class="price-icon btc">₿</div>
+                    <div>
+                        <div class="price-label">BTC</div>
+                        <div class="price-value" id="price-btc">$--</div>
+                    </div>
+                </div>
+                <div class="card price-card">
+                    <div class="price-icon eth">Ξ</div>
+                    <div>
+                        <div class="price-label">ETH</div>
+                        <div class="price-value" id="price-eth">$--</div>
+                    </div>
+                </div>
+                <div class="card price-card">
+                    <div class="price-icon sol">◎</div>
+                    <div>
+                        <div class="price-label">SOL</div>
+                        <div class="price-value" id="price-sol">$--</div>
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Side</label>
-                <select id="side">
-                    <option value="long">Long</option>
-                    <option value="short">Short</option>
-                </select>
+
+            <!-- Stats -->
+            <div class="grid grid-4" style="margin-bottom: 1.5rem;">
+                <div class="card stat-card">
+                    <div class="stat-value green" id="stat-rate">--%</div>
+                    <div class="stat-label">Internal Match Rate</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value purple" id="stat-volume">$--</div>
+                    <div class="stat-label">Total Volume</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-agents">--</div>
+                    <div class="stat-label">Active Agents</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-intents">--</div>
+                    <div class="stat-label">Open Intents</div>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Size (USDC)</label>
-                <input type="number" id="size" placeholder="100.00" step="0.01" value="100" required>
+
+            <!-- Activity & Leaderboard -->
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-title">Recent Matches</div>
+                    <table class="table">
+                        <thead><tr><th>Agents</th><th>Asset</th><th>Size</th><th>Price</th></tr></thead>
+                        <tbody id="matchesBody"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);">No matches yet</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <div class="card-title">Top Agents</div>
+                    <table class="table">
+                        <thead><tr><th>#</th><th>Agent</th><th>Rep</th><th>Trades</th></tr></thead>
+                        <tbody id="leaderboardBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Leverage</label>
-                <input type="number" id="leverage" value="5" min="1" max="20" required>
+        </div>
+
+        <!-- Trading -->
+        <div class="page" id="page-trading">
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-title">Create Intent</div>
+                    <form id="intentForm">
+                        <div class="form-group">
+                            <label class="form-label">Direction</label>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-success" onclick="setDirection('long')">Long</button>
+                                <button type="button" class="btn btn-danger" onclick="setDirection('short')">Short</button>
+                            </div>
+                            <input type="hidden" id="intentDir" value="long">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Asset</label>
+                            <select class="form-select" id="intentAsset">
+                                <option value="ETH-PERP">ETH-PERP</option>
+                                <option value="BTC-PERP">BTC-PERP</option>
+                                <option value="SOL-PERP">SOL-PERP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Size (USDC)</label>
+                            <input type="number" class="form-input" id="intentSize" value="100" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Leverage: <span id="levDisplay">5</span>x</label>
+                            <input type="range" id="intentLev" min="1" max="20" value="5" style="width:100%">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Submit Intent</button>
+                    </form>
+                    <div class="result-box" id="intentResult"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Open Intents</div>
+                    <table class="table">
+                        <thead><tr><th>Agent</th><th>Type</th><th>Asset</th><th>Size</th><th>Status</th></tr></thead>
+                        <tbody id="intentsBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <button type="submit">Place Market Order</button>
-        </form>
-        <div id="trade-result" style="margin-top: 1rem; padding: 1rem; border-radius: 6px; display: none;"></div>
-    </div>
+        </div>
 
-    <!-- 4. Leaderboard -->
-    <div class="section leaderboard-sec">
-        <h2>Top Agents</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Agent</th>
-                    <th style="text-align: right;">Reputation</th>
-                    <th style="text-align: right;">Trades</th>
-                </tr>
-            </thead>
-            <tbody id="leaderboard-body">
-                <tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-</div>
+        <!-- Signals -->
+        <div class="page" id="page-signals">
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-title">Create Signal</div>
+                    <form id="signalForm">
+                        <div class="form-group">
+                            <label class="form-label">Asset</label>
+                            <select class="form-select" id="sigAsset">
+                                <option value="ETH-PERP">ETH-PERP</option>
+                                <option value="BTC-PERP">BTC-PERP</option>
+                                <option value="SOL-PERP">SOL-PERP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Prediction</label>
+                            <select class="form-select" id="sigType">
+                                <option value="price_above">Price Above</option>
+                                <option value="price_below">Price Below</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Target Price ($)</label>
+                            <input type="number" class="form-input" id="sigTarget" value="2200">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Stake (USDC)</label>
+                            <input type="number" class="form-input" id="sigStake" value="50" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Duration</label>
+                            <select class="form-select" id="sigDuration">
+                                <option value="1">1 hour</option>
+                                <option value="6">6 hours</option>
+                                <option value="24" selected>24 hours</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Create Signal</button>
+                    </form>
+                    <div class="result-box" id="signalResult"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Open Signals</div>
+                    <div id="signalsList"><p style="color:var(--text-muted);text-align:center;">No signals</p></div>
+                </div>
+            </div>
+            <div class="card" style="margin-top:1.5rem;">
+                <div class="card-title">Betting Stats</div>
+                <div class="grid grid-4">
+                    <div class="stat-card"><div class="stat-value" id="bet-signals">0</div><div class="stat-label">Signals</div></div>
+                    <div class="stat-card"><div class="stat-value" id="bet-bets">0</div><div class="stat-label">Bets</div></div>
+                    <div class="stat-card"><div class="stat-value purple" id="bet-volume">$0</div><div class="stat-label">Volume</div></div>
+                    <div class="stat-card"><div class="stat-value green" id="bet-rate">100%</div><div class="stat-label">Internal Rate</div></div>
+                </div>
+            </div>
+        </div>
 
-<script>
-    const API_BASE = 'http://localhost:8082';
+        <!-- Agents -->
+        <div class="page" id="page-agents">
+            <div class="grid grid-3" style="margin-bottom:1.5rem;">
+                <div class="card">
+                    <div class="card-title">Register Agent</div>
+                    <form id="registerForm">
+                        <div class="form-group">
+                            <label class="form-label">Display Name</label>
+                            <input type="text" class="form-input" id="regName" placeholder="MyBot">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Twitter (optional)</label>
+                            <input type="text" class="form-input" id="regTwitter" placeholder="@mybot">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Register</button>
+                    </form>
+                    <div class="result-box" id="registerResult"></div>
+                </div>
+                <div class="card" style="grid-column: span 2;">
+                    <div class="card-title">My Agent</div>
+                    <div id="myAgentInfo" style="color:var(--text-muted);">Connect wallet to view</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">All Agents</div>
+                <table class="table">
+                    <thead><tr><th>#</th><th>Agent ID</th><th>Name</th><th>Reputation</th><th>Trades</th><th>Volume</th></tr></thead>
+                    <tbody id="agentsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
 
-    // Update Prices
-    async function fetchPrices() {
-        try {
-            const response = await fetch(`${API_BASE}/prices`);
-            const data = await response.json();
-            // 后端返回格式: {prices: {BTC: {price: xxx}, ...}}
-            const prices = data.prices || data;
-            document.getElementById('price-btc').textContent = `$${parseFloat(prices.BTC?.price || prices.BTC || 0).toLocaleString()}`;
-            document.getElementById('price-eth').textContent = `$${parseFloat(prices.ETH?.price || prices.ETH || 0).toLocaleString()}`;
-            document.getElementById('price-sol').textContent = `$${parseFloat(prices.SOL?.price || prices.SOL || 0).toFixed(2)}`;
-        } catch (e) {
-            console.error('Price fetch error:', e);
-        }
-    }
+    <div class="toast-container" id="toasts"></div>
 
-    // Update Stats
-    async function fetchStats() {
-        try {
-            const response = await fetch(`${API_BASE}/stats`);
-            const data = await response.json();
-            document.getElementById('stat-volume').textContent = `$${(data.total_volume || 0).toLocaleString()}`;
-            document.getElementById('stat-agents').textContent = data.total_agents || 0;
-            document.getElementById('stat-rate').textContent = data.internal_match_rate || data.avg_internal_rate || '100%';
-        } catch (e) {
-            console.error('Stats fetch error:', e);
-        }
-    }
+    <script>
+        const API = 'http://localhost:8082';
+        let currentAgent = null;
 
-    // Update Leaderboard
-    async function fetchLeaderboard() {
-        try {
-            const response = await fetch(`${API_BASE}/leaderboard`);
-            const data = await response.json();
-            const tbody = document.getElementById('leaderboard-body');
-            
-            if (data.leaderboard && data.leaderboard.length > 0) {
-                tbody.innerHTML = data.leaderboard.slice(0, 5).map(agent => `
-                    <tr>
-                        <td>${agent.display_name || agent.agent_id}</td>
-                        <td style="text-align: right;">${(agent.reputation_score * 100).toFixed(0)}%</td>
-                        <td style="text-align: right;">${agent.total_trades || 0}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">No agents yet</td></tr>';
-            }
-        } catch (e) {
-            console.error('Leaderboard fetch error:', e);
-        }
-    }
-
-    // Trade Form
-    document.getElementById('trade-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const resultDiv = document.getElementById('trade-result');
-        
-        try {
-            const response = await fetch(`${API_BASE}/intents`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    agent_id: document.getElementById('agent-id').value,
-                    intent_type: document.getElementById('side').value,
-                    asset: document.getElementById('asset').value,
-                    size_usdc: parseFloat(document.getElementById('size').value),
-                    leverage: parseInt(document.getElementById('leverage').value)
-                })
+        // Navigation
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('page-' + btn.dataset.page).classList.add('active');
+                loadPage(btn.dataset.page);
             });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                resultDiv.style.display = 'block';
-                resultDiv.style.background = 'rgba(16, 185, 129, 0.1)';
-                resultDiv.style.border = '1px solid var(--success)';
-                resultDiv.innerHTML = `
-                    <strong style="color: var(--success);">✓ Order Placed</strong><br>
-                    <small>Internal Rate: ${data.routing?.internal_rate || 'N/A'}</small><br>
-                    <small>Fee Saved: $${(data.routing?.fee_saved || 0).toFixed(4)}</small>
-                `;
-            } else {
-                throw new Error(data.detail || 'Order failed');
-            }
-        } catch (e) {
-            resultDiv.style.display = 'block';
-            resultDiv.style.background = 'rgba(239, 68, 68, 0.1)';
-            resultDiv.style.border = '1px solid var(--danger)';
-            resultDiv.innerHTML = `<strong style="color: var(--danger);">✗ Error:</strong> ${e.message}`;
+        });
+
+        // API helper
+        async function api(endpoint, options = {}) {
+            const res = await fetch(API + endpoint, { headers: {'Content-Type': 'application/json'}, ...options });
+            return res.json();
         }
-    });
 
-    // WebSocket for real-time updates
-    function connectWebSocket() {
-        const ws = new WebSocket('ws://localhost:8082/ws');
-        
-        ws.onopen = () => console.log('WebSocket connected');
-        ws.onclose = () => {
-            console.log('WebSocket disconnected, reconnecting...');
-            setTimeout(connectWebSocket, 3000);
-        };
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'price_update') {
-                const el = document.getElementById(`price-${data.asset.toLowerCase()}`);
-                if (el) el.textContent = `$${parseFloat(data.price).toLocaleString()}`;
+        // Load functions
+        async function loadPrices() {
+            const data = await api('/prices');
+            const p = data.prices || data;
+            document.getElementById('price-btc').textContent = '$' + (p.BTC?.price || p.BTC || 0).toLocaleString();
+            document.getElementById('price-eth').textContent = '$' + (p.ETH?.price || p.ETH || 0).toLocaleString();
+            document.getElementById('price-sol').textContent = '$' + (p.SOL?.price || p.SOL || 0).toFixed(2);
+        }
+
+        async function loadStats() {
+            const data = await api('/stats');
+            document.getElementById('stat-rate').textContent = data.internal_match_rate || '100%';
+            document.getElementById('stat-volume').textContent = '$' + (data.total_volume || 0).toLocaleString();
+            document.getElementById('stat-agents').textContent = data.total_agents || 0;
+            document.getElementById('stat-intents').textContent = data.open_intents || 0;
+        }
+
+        async function loadLeaderboard() {
+            const data = await api('/leaderboard');
+            document.getElementById('leaderboardBody').innerHTML = (data.leaderboard || []).slice(0,5).map((a,i) => `
+                <tr><td>#${i+1}</td><td>${a.display_name||a.agent_id}</td><td>${(a.reputation_score*100).toFixed(0)}%</td><td>${a.total_trades||0}</td></tr>
+            `).join('') || '<tr><td colspan="4">No agents</td></tr>';
+        }
+
+        async function loadMatches() {
+            const data = await api('/matches');
+            document.getElementById('matchesBody').innerHTML = (data.matches || []).slice(0,5).map(m => `
+                <tr><td>${m.agent_a_id} vs ${m.agent_b_id}</td><td>${m.asset}</td><td>$${m.size_usdc}</td><td>$${m.price?.toLocaleString()||'-'}</td></tr>
+            `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">No matches yet</td></tr>';
+        }
+
+        async function loadIntents() {
+            const data = await api('/intents');
+            document.getElementById('intentsBody').innerHTML = (data.intents || []).map(i => `
+                <tr><td>${i.agent_id}</td><td><span class="badge ${i.intent_type}">${i.intent_type}</span></td><td>${i.asset}</td><td>$${i.size_usdc}</td><td><span class="badge ${i.status}">${i.status}</span></td></tr>
+            `).join('') || '<tr><td colspan="5">No intents</td></tr>';
+        }
+
+        async function loadSignals() {
+            const data = await api('/signals');
+            const list = document.getElementById('signalsList');
+            if (!data.signals || data.signals.length === 0) {
+                list.innerHTML = '<p style="color:var(--text-muted);text-align:center;">No open signals</p>';
+                return;
             }
-        };
-    }
+            list.innerHTML = data.signals.map(s => `
+                <div class="card signal-card">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                        <span class="badge open">${s.status}</span>
+                        <span style="color:var(--text-muted);">$${s.stake_amount} stake</span>
+                    </div>
+                    <div class="signal-prediction">${s.asset} ${s.signal_type==='price_above'?'>':'<'} $${s.target_value.toLocaleString()}</div>
+                    <div class="signal-meta"><span>By: ${s.creator_id}</span></div>
+                    <button class="btn btn-outline btn-full" style="margin-top:12px;" onclick="fadeSignal('${s.signal_id}')">Fade This</button>
+                </div>
+            `).join('');
+        }
 
-    // Initialize
-    fetchPrices();
-    fetchStats();
-    fetchLeaderboard();
-    connectWebSocket();
-    
-    // Auto-refresh
-    setInterval(fetchPrices, 30000);
-    setInterval(fetchStats, 60000);
-    setInterval(fetchLeaderboard, 60000);
-</script>
+        async function loadBettingStats() {
+            const data = await api('/betting/stats');
+            document.getElementById('bet-signals').textContent = data.total_signals || 0;
+            document.getElementById('bet-bets').textContent = data.total_bets || 0;
+            document.getElementById('bet-volume').textContent = '$' + (data.total_volume || 0).toFixed(0);
+            document.getElementById('bet-rate').textContent = data.internal_match_rate || '100%';
+        }
 
+        async function loadAgents() {
+            const data = await api('/agents');
+            document.getElementById('agentsBody').innerHTML = (data.agents || []).map((a,i) => `
+                <tr><td>#${i+1}</td><td style="font-family:monospace;">${a.agent_id}</td><td>${a.display_name||'-'}</td><td>${(a.reputation_score*100).toFixed(0)}%</td><td>${a.total_trades||0}</td><td>$${a.total_volume||0}</td></tr>
+            `).join('');
+        }
+
+        function loadPage(page) {
+            if (page === 'dashboard') { loadPrices(); loadStats(); loadLeaderboard(); loadMatches(); }
+            else if (page === 'trading') { loadIntents(); }
+            else if (page === 'signals') { loadSignals(); loadBettingStats(); }
+            else if (page === 'agents') { loadAgents(); }
+        }
+
+        // Forms
+        function setDirection(dir) {
+            document.getElementById('intentDir').value = dir;
+            document.querySelectorAll('.btn-group .btn').forEach(b => b.style.opacity = '0.5');
+            event.target.style.opacity = '1';
+        }
+        document.getElementById('intentLev').addEventListener('input', e => {
+            document.getElementById('levDisplay').textContent = e.target.value;
+        });
+
+        document.getElementById('intentForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            if (!currentAgent) { toast('Connect wallet first', 'error'); return; }
+            const res = await api('/intents', { method: 'POST', body: JSON.stringify({
+                agent_id: currentAgent.agent_id,
+                intent_type: document.getElementById('intentDir').value,
+                asset: document.getElementById('intentAsset').value,
+                size_usdc: parseFloat(document.getElementById('intentSize').value),
+                leverage: parseInt(document.getElementById('intentLev').value)
+            })});
+            const box = document.getElementById('intentResult');
+            if (res.success) {
+                box.className = 'result-box success';
+                box.innerHTML = `<strong>✓ Intent Created</strong><br>Internal Rate: ${res.routing?.internal_rate}<br>Fee Saved: $${(res.routing?.fee_saved||0).toFixed(4)}`;
+                loadIntents();
+            } else {
+                box.className = 'result-box error';
+                box.innerHTML = `<strong>✗ Error:</strong> ${res.detail || 'Failed'}`;
+            }
+        });
+
+        document.getElementById('signalForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            if (!currentAgent) { toast('Connect wallet first', 'error'); return; }
+            const res = await api('/signals', { method: 'POST', body: JSON.stringify({
+                agent_id: currentAgent.agent_id,
+                asset: document.getElementById('sigAsset').value,
+                signal_type: document.getElementById('sigType').value,
+                target_value: parseFloat(document.getElementById('sigTarget').value),
+                stake_amount: parseFloat(document.getElementById('sigStake').value),
+                duration_hours: parseInt(document.getElementById('sigDuration').value)
+            })});
+            const box = document.getElementById('signalResult');
+            if (res.success) {
+                box.className = 'result-box success';
+                box.innerHTML = `<strong>✓ Signal Created</strong><br>${res.signal?.description}`;
+                loadSignals(); loadBettingStats();
+            } else {
+                box.className = 'result-box error';
+                box.innerHTML = `<strong>✗ Error:</strong> ${res.detail || 'Failed'}`;
+            }
+        });
+
+        async function fadeSignal(signalId) {
+            if (!currentAgent) { toast('Connect wallet first', 'error'); return; }
+            const res = await api('/signals/fade', { method: 'POST', body: JSON.stringify({
+                signal_id: signalId, fader_id: currentAgent.agent_id
+            })});
+            if (res.success) {
+                toast(`Bet created! Pot: $${res.bet.total_pot}`, 'success');
+                loadSignals(); loadBettingStats();
+            } else {
+                toast(res.detail || 'Failed', 'error');
+            }
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const wallet = '0x' + Math.random().toString(16).slice(2,42);
+            const res = await api('/agents/register', { method: 'POST', body: JSON.stringify({
+                wallet_address: wallet,
+                display_name: document.getElementById('regName').value || 'Agent_' + wallet.slice(2,6),
+                twitter_handle: document.getElementById('regTwitter').value || null
+            })});
+            const box = document.getElementById('registerResult');
+            if (res.agent) {
+                currentAgent = res.agent;
+                document.getElementById('connectBtn').textContent = currentAgent.display_name;
+                box.className = 'result-box success';
+                box.innerHTML = `<strong>✓ Registered</strong><br>ID: ${res.agent.agent_id}`;
+                updateMyAgent();
+                loadAgents();
+            } else {
+                box.className = 'result-box error';
+                box.innerHTML = `<strong>✗ Error:</strong> ${res.detail || 'Failed'}`;
+            }
+        });
+
+        async function connectWallet() {
+            const wallet = '0x' + Math.random().toString(16).slice(2,42);
+            const res = await api('/agents/register', { method: 'POST', body: JSON.stringify({
+                wallet_address: wallet, display_name: 'Agent_' + wallet.slice(2,6)
+            })});
+            if (res.agent) {
+                currentAgent = res.agent;
+                document.getElementById('connectBtn').textContent = currentAgent.display_name;
+                toast('Wallet connected!', 'success');
+                updateMyAgent();
+            }
+        }
+
+        function updateMyAgent() {
+            if (!currentAgent) return;
+            document.getElementById('myAgentInfo').innerHTML = `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+                    <div><strong>ID:</strong> ${currentAgent.agent_id}</div>
+                    <div><strong>Name:</strong> ${currentAgent.display_name}</div>
+                    <div><strong>Reputation:</strong> ${(currentAgent.reputation_score*100).toFixed(0)}%</div>
+                    <div><strong>Trades:</strong> ${currentAgent.total_trades||0}</div>
+                </div>
+            `;
+        }
+
+        function toast(msg, type='info') {
+            const t = document.createElement('div');
+            t.className = 'toast ' + type;
+            t.textContent = msg;
+            document.getElementById('toasts').appendChild(t);
+            setTimeout(() => t.remove(), 4000);
+        }
+
+        // WebSocket
+        function connectWS() {
+            const ws = new WebSocket('ws://localhost:8082/ws');
+            ws.onmessage = e => {
+                const d = JSON.parse(e.data);
+                if (d.type === 'price_update') {
+                    const el = document.getElementById('price-' + d.asset.toLowerCase());
+                    if (el) el.textContent = '$' + parseFloat(d.price).toLocaleString();
+                }
+            };
+            ws.onclose = () => setTimeout(connectWS, 3000);
+        }
+
+        // Init
+        loadPage('dashboard');
+        connectWS();
+        setInterval(loadPrices, 30000);
+    </script>
 </body>
 </html>
