@@ -5,11 +5,14 @@ Position Manager - 持仓管理 + 止盈止损 + 风控
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, List, Callable
 from enum import Enum
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 class PositionSide(Enum):

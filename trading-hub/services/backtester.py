@@ -5,10 +5,13 @@ Backtester - 策略回测
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import List, Dict, Callable, Optional
 import random
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

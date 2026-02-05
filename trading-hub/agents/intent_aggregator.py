@@ -15,8 +15,6 @@ from datetime import datetime
 from typing import Optional, List, Dict, AsyncIterator
 from dataclasses import dataclass
 
-import sys
-sys.path.append('..')
 from sdk.tradinghub import TradingHub
 
 @dataclass

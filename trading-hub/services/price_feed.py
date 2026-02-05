@@ -10,10 +10,13 @@ Price Feed Service
 
 import asyncio
 import aiohttp
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Callable
 from dataclasses import dataclass, field
 import json
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Price:

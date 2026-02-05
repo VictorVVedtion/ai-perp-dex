@@ -11,9 +11,12 @@ Trading Hub SDK - AI-Native Interface
 import asyncio
 import aiohttp
 import json
+import logging
 from typing import Optional, Callable, List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 class Direction(Enum):
     LONG = "long"

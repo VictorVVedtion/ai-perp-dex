@@ -11,13 +11,14 @@ Autonomous Trading Agent
 
 import asyncio
 import aiohttp
+import logging
 import random
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict
 from dataclasses import dataclass, field
 
-import sys
-sys.path.append('..')
 from sdk.tradinghub import TradingHub, Match
 
 @dataclass

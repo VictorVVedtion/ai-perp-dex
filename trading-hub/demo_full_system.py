@@ -5,8 +5,6 @@ Trading Hub - Full System Demo
 """
 
 import asyncio
-import sys
-sys.path.insert(0, '.')
 
 from sdk.tradinghub import TradingHub
 from agents.autonomous_trader import AutonomousTrader

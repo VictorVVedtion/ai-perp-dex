@@ -11,15 +11,30 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 import asyncio
 import json
+import logging
 import uvicorn
 
-import sys
-sys.path.append('..')
+logger = logging.getLogger(__name__)
+
 from db.store import store
 from api.models import IntentType, IntentStatus, AgentStatus
 from services.price_feed import PriceFeed, price_feed
 from services.pnl_tracker import pnl_tracker
 from services.external_router import external_router, RoutingResult
+
+# 鉴权中间件
+import sys
+sys.path.insert(0, '..')
+from middleware.auth import (
+    verify_agent, 
+    verify_agent_optional,
+    verify_agent_owns_resource, 
+    api_key_store,
+    AgentAuth,
+    create_jwt_token,
+    AuthError,
+    ForbiddenError,
+)
 
 app = FastAPI(title="Trading Hub", version="0.1.0")
 
@@ -183,7 +198,11 @@ async def get_stats():
 
 @app.post("/agents/register")
 async def register_agent(req: RegisterRequest):
-    """注册 Agent (钱包签名)"""
+    """
+    注册 Agent (钱包签名)
+    
+    返回 Agent 信息和首个 API Key (只显示一次，请妥善保存)
+    """
     agent = store.create_agent(
         wallet_address=req.wallet_address,
         display_name=req.display_name,
@@ -197,13 +216,25 @@ async def register_agent(req: RegisterRequest):
         specialties=["trading"],
     )
     
+    # 创建首个 API Key
+    raw_key, api_key = api_key_store.create_key(
+        agent_id=agent.agent_id,
+        name="default",
+        scopes=["read", "write"],
+    )
+    
     # 广播新 Agent
     await manager.broadcast({
         "type": "new_agent",
         "data": agent.to_dict()
     })
     
-    return {"success": True, "agent": agent.to_dict()}
+    return {
+        "success": True, 
+        "agent": agent.to_dict(),
+        "api_key": raw_key,  # ⚠️ 只显示一次!
+        "api_key_info": api_key.to_dict(),
+    }
 
 # 注意: /agents/discover 必须在 /agents/{agent_id} 之前，否则会被拦截
 @app.get("/agents/discover")
@@ -254,18 +285,30 @@ async def get_pnl_leaderboard(limit: int = 20):
 # --- Intent ---
 
 @app.post("/intents")
-async def create_intent(req: IntentRequest):
+async def create_intent(
+    req: IntentRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
     """
-    发布交易意图 - Dark Pool 逻辑
+    发布交易意图 - Dark Pool 逻辑 (需要认证)
+    
+    Headers:
+        X-API-Key: th_xxxx_xxxxxxxxx
+        或
+        Authorization: Bearer <jwt_token>
     
     1. 先尝试内部匹配 (0 fee)
     2. 如果部分匹配，剩余路由到外部 (HL fee)
     3. 如果完全没匹配，全部路由到外部
     """
+    # 验证: Agent 只能为自己创建 Intent
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot create intent for another agent")
+    
     intent_type = IntentType(req.intent_type)
     
     intent = store.create_intent(
-        agent_id=req.agent_id,
+        agent_id=auth.agent_id,  # 使用认证的 agent_id
         intent_type=intent_type,
         asset=req.asset,
         size_usdc=req.size_usdc,

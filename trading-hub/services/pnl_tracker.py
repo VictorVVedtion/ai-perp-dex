@@ -12,8 +12,6 @@ from datetime import datetime
 from typing import Optional, Dict, List
 from dataclasses import dataclass, field
 
-import sys
-sys.path.append('..')
 from services.price_feed import price_feed, Price
 from db.store import store
 from api.models import Match

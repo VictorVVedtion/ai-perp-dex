@@ -9,11 +9,14 @@ Historical Data - 真实历史数据
 
 import asyncio
 import aiohttp
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import json
 import os
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

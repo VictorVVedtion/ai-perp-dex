@@ -8,10 +8,13 @@ Hyperliquid Client
 
 import os
 import json
+import logging
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 from eth_account import Account
+
+logger = logging.getLogger(__name__)
 
 # Hyperliquid SDK
 from hyperliquid.info import Info

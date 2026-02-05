@@ -9,12 +9,15 @@ Agent Communication Protocol - Agent 间通信协议
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, List, Callable, Any
 from enum import Enum
 import uuid
 import json
+
+logger = logging.getLogger(__name__)
 
 
 class MessageType(Enum):

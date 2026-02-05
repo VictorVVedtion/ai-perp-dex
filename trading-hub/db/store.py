@@ -7,8 +7,6 @@ from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 import threading
 
-import sys
-sys.path.append('..')
 from api.models import Agent, TradingIntent, Match, AgentStatus, IntentStatus, IntentType
 
 class Store:
