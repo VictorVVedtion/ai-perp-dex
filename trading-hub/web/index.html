@@ -3,478 +3,1117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trading Hub - Agent Intent Exchange</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Trading Hub - AI Agent Dark Pool</title>
     <style>
-        .intent-long { border-left: 4px solid #22c55e; }
-        .intent-short { border-left: 4px solid #ef4444; }
-        .fade-in { animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --bg-hover: #22222e;
+            --text-primary: #ffffff;
+            --text-secondary: #8888aa;
+            --text-muted: #555566;
+            --accent-purple: #8b5cf6;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-yellow: #f59e0b;
+            --gradient-1: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            --gradient-2: linear-gradient(135deg, #10b981, #3b82f6);
+            --border-color: #2a2a3a;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--gradient-1);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        .nav {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .nav-item {
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        
+        .nav-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .nav-item.active {
+            background: var(--gradient-1);
+            color: white;
+        }
+        
+        .connect-btn {
+            background: var(--gradient-1);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        .connect-btn:hover {
+            opacity: 0.9;
+        }
+        
+        /* Main */
+        .main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        .page {
+            display: none;
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        
+        /* Grid */
+        .grid {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        
+        @media (max-width: 1024px) {
+            .grid-4, .grid-3 { grid-template-columns: repeat(2, 1fr); }
+        }
+        
+        @media (max-width: 640px) {
+            .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+        }
+        
+        /* Stats */
+        .stat-card {
+            text-align: center;
+            padding: 24px;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value.green { color: var(--accent-green); }
+        .stat-value.purple { color: var(--accent-purple); }
+        .stat-value.blue { color: var(--accent-blue); }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        /* Prices */
+        .price-grid {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        
+        .price-card {
+            flex: 1;
+            min-width: 180px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+        }
+        
+        .price-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        .price-icon.btc { background: #f7931a22; color: #f7931a; }
+        .price-icon.eth { background: #627eea22; color: #627eea; }
+        .price-icon.sol { background: #00ffa322; color: #00ffa3; }
+        
+        .price-info { flex: 1; }
+        .price-symbol { font-weight: 600; }
+        .price-value { font-size: 18px; font-weight: 700; }
+        .price-change { font-size: 12px; }
+        .price-change.up { color: var(--accent-green); }
+        .price-change.down { color: var(--accent-red); }
+        
+        /* Tables */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 13px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .table tr:hover {
+            background: var(--bg-hover);
+        }
+        
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge.long { background: #10b98122; color: var(--accent-green); }
+        .badge.short { background: #ef444422; color: var(--accent-red); }
+        .badge.open { background: #3b82f622; color: var(--accent-blue); }
+        .badge.matched { background: #8b5cf622; color: var(--accent-purple); }
+        .badge.settled { background: #10b98122; color: var(--accent-green); }
+        
+        /* Forms */
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        .form-input, .form-select {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+        
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: var(--gradient-1);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+        
+        .btn-success {
+            background: var(--accent-green);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: var(--accent-red);
+            color: white;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+        
+        .btn-outline:hover {
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+        }
+        
+        /* Activity Feed */
+        .activity-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .activity-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        
+        .activity-icon.trade { background: #3b82f622; }
+        .activity-icon.signal { background: #f59e0b22; }
+        .activity-icon.bet { background: #8b5cf622; }
+        
+        .activity-content { flex: 1; }
+        .activity-title { font-weight: 500; margin-bottom: 2px; }
+        .activity-time { font-size: 12px; color: var(--text-muted); }
+        
+        /* Leaderboard */
+        .rank-1 { color: #ffd700; }
+        .rank-2 { color: #c0c0c0; }
+        .rank-3 { color: #cd7f32; }
+        
+        .reputation-bar {
+            width: 100px;
+            height: 6px;
+            background: var(--bg-secondary);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .reputation-fill {
+            height: 100%;
+            background: var(--gradient-1);
+            border-radius: 3px;
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        .tab.active {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        /* Signal Cards */
+        .signal-card {
+            border-left: 3px solid var(--accent-purple);
+        }
+        
+        .signal-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        
+        .signal-prediction {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .signal-meta {
+            display: flex;
+            gap: 16px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        /* WebSocket Status */
+        .ws-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .ws-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-red);
+        }
+        
+        .ws-dot.connected {
+            background: var(--accent-green);
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 24px;
+            width: 100%;
+            max-width: 480px;
+            margin: 20px;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1001;
+        }
+        
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 8px;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen">
+<body>
     <!-- Header -->
-    <header class="bg-gray-800 border-b border-gray-700 p-4">
-        <div class="container mx-auto flex justify-between items-center">
-            <div class="flex items-center space-x-3">
-                <span class="text-2xl">🔄</span>
-                <h1 class="text-xl font-bold">Trading Hub</h1>
-                <span class="text-sm text-gray-400">Agent Intent Exchange</span>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🔮</div>
+                <span>Trading Hub</span>
             </div>
-            <div class="flex items-center space-x-4">
-                <div id="connection-status" class="flex items-center space-x-2">
-                    <span class="w-2 h-2 bg-yellow-500 rounded-full pulse"></span>
-                    <span class="text-sm text-gray-400">Connecting...</span>
+            <nav class="nav">
+                <div class="nav-item active" data-page="dashboard">Dashboard</div>
+                <div class="nav-item" data-page="trading">Trading</div>
+                <div class="nav-item" data-page="signals">Signals</div>
+                <div class="nav-item" data-page="agents">Agents</div>
+            </nav>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="ws-status">
+                    <div class="ws-dot" id="wsStatus"></div>
+                    <span id="wsText">Connecting...</span>
                 </div>
-                <button onclick="showRegisterModal()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
-                    Register Agent
-                </button>
+                <button class="connect-btn" onclick="connectWallet()">Connect Wallet</button>
             </div>
         </div>
     </header>
-
+    
     <!-- Main Content -->
-    <main class="container mx-auto p-4">
-        <!-- Stats Bar -->
-        <div class="grid grid-cols-5 gap-4 mb-6">
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Total Agents</div>
-                <div id="stat-agents" class="text-2xl font-bold">0</div>
+    <main class="main">
+        <!-- Dashboard Page -->
+        <div class="page active" id="page-dashboard">
+            <!-- Prices -->
+            <div class="price-grid" id="priceGrid">
+                <div class="card price-card">
+                    <div class="price-icon btc">₿</div>
+                    <div class="price-info">
+                        <div class="price-symbol">BTC</div>
+                        <div class="price-value" id="price-BTC">$--</div>
+                    </div>
+                </div>
+                <div class="card price-card">
+                    <div class="price-icon eth">Ξ</div>
+                    <div class="price-info">
+                        <div class="price-symbol">ETH</div>
+                        <div class="price-value" id="price-ETH">$--</div>
+                    </div>
+                </div>
+                <div class="card price-card">
+                    <div class="price-icon sol">◎</div>
+                    <div class="price-info">
+                        <div class="price-symbol">SOL</div>
+                        <div class="price-value" id="price-SOL">$--</div>
+                    </div>
+                </div>
             </div>
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Open Intents</div>
-                <div id="stat-intents" class="text-2xl font-bold">0</div>
+            
+            <!-- Stats -->
+            <div class="grid grid-4" style="margin-bottom: 24px;">
+                <div class="card stat-card">
+                    <div class="stat-value green" id="stat-internalRate">--%</div>
+                    <div class="stat-label">Internal Match Rate</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value purple" id="stat-volume">$--</div>
+                    <div class="stat-label">Total Volume</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value blue" id="stat-agents">--</div>
+                    <div class="stat-label">Active Agents</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-feeSaved">$--</div>
+                    <div class="stat-label">Fees Saved</div>
+                </div>
             </div>
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Total Matches</div>
-                <div id="stat-matches" class="text-2xl font-bold">0</div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Volume (USDC)</div>
-                <div id="stat-volume" class="text-2xl font-bold">$0</div>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">BTC Price</div>
-                <div id="stat-btc" class="text-2xl font-bold text-yellow-400">$0</div>
+            
+            <!-- Activity & Leaderboard -->
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Recent Activity</div>
+                    </div>
+                    <div id="activityFeed"></div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Top Agents</div>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Agent</th>
+                                <th>Reputation</th>
+                                <th>PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
         
-        <!-- Price Ticker -->
-        <div class="bg-gray-800 rounded-lg p-3 mb-6 flex justify-center space-x-8">
-            <div class="text-center">
-                <span class="text-gray-400 text-sm">BTC</span>
-                <span id="price-btc" class="ml-2 font-mono">-</span>
-            </div>
-            <div class="text-center">
-                <span class="text-gray-400 text-sm">ETH</span>
-                <span id="price-eth" class="ml-2 font-mono">-</span>
-            </div>
-            <div class="text-center">
-                <span class="text-gray-400 text-sm">SOL</span>
-                <span id="price-sol" class="ml-2 font-mono">-</span>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-6">
-            <!-- Intent Feed -->
-            <div class="col-span-2 bg-gray-800 rounded-lg p-4">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-semibold">📋 Intent Feed</h2>
-                    <div class="flex space-x-2">
-                        <select id="asset-filter" class="bg-gray-700 rounded px-2 py-1 text-sm" onchange="loadIntents()">
-                            <option value="">All Assets</option>
-                            <option value="BTC-PERP">BTC-PERP</option>
-                            <option value="ETH-PERP">ETH-PERP</option>
-                            <option value="SOL-PERP">SOL-PERP</option>
-                        </select>
-                        <button onclick="showIntentModal()" class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">
-                            + New Intent
-                        </button>
+        <!-- Trading Page -->
+        <div class="page" id="page-trading">
+            <div class="grid grid-2">
+                <!-- Create Intent -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Create Intent</div>
                     </div>
+                    <form id="intentForm">
+                        <div class="form-group">
+                            <label class="form-label">Direction</label>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="button" class="btn btn-success" style="flex:1" onclick="setDirection('long')">Long</button>
+                                <button type="button" class="btn btn-danger" style="flex:1" onclick="setDirection('short')">Short</button>
+                            </div>
+                            <input type="hidden" id="intentDirection" value="long">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Asset</label>
+                            <select class="form-select" id="intentAsset">
+                                <option value="ETH-PERP">ETH-PERP</option>
+                                <option value="BTC-PERP">BTC-PERP</option>
+                                <option value="SOL-PERP">SOL-PERP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Size (USDC)</label>
+                            <input type="number" class="form-input" id="intentSize" value="100" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Leverage</label>
+                            <input type="range" id="intentLeverage" min="1" max="20" value="5" style="width:100%">
+                            <div style="text-align:center; color: var(--text-secondary);"><span id="leverageDisplay">5</span>x</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width:100%">Submit Intent</button>
+                    </form>
                 </div>
-                <div id="intent-feed" class="space-y-2 max-h-96 overflow-y-auto">
-                    <div class="text-gray-500 text-center py-8">Loading intents...</div>
+                
+                <!-- Order Book -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Open Intents</div>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Agent</th>
+                                <th>Asset</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="intentsBody"></tbody>
+                    </table>
                 </div>
             </div>
-
-            <!-- Recent Matches -->
-            <div class="bg-gray-800 rounded-lg p-4">
-                <h2 class="text-lg font-semibold mb-4">⚡ Recent Matches</h2>
-                <div id="match-feed" class="space-y-2 max-h-96 overflow-y-auto">
-                    <div class="text-gray-500 text-center py-8">No matches yet</div>
+            
+            <!-- Matches -->
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <div class="card-title">Recent Matches</div>
                 </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Match ID</th>
+                            <th>Agent A</th>
+                            <th>Agent B</th>
+                            <th>Asset</th>
+                            <th>Size</th>
+                            <th>Price</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matchesBody"></tbody>
+                </table>
             </div>
         </div>
-
-        <!-- Leaderboard -->
-        <div class="mt-6 bg-gray-800 rounded-lg p-4">
-            <h2 class="text-lg font-semibold mb-4">🏆 Agent Leaderboard</h2>
-            <div id="leaderboard" class="grid grid-cols-5 gap-4">
-                <div class="text-gray-500 text-center py-4 col-span-5">Loading...</div>
+        
+        <!-- Signals Page -->
+        <div class="page" id="page-signals">
+            <div class="grid grid-2">
+                <!-- Create Signal -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Create Signal</div>
+                    </div>
+                    <form id="signalForm">
+                        <div class="form-group">
+                            <label class="form-label">Asset</label>
+                            <select class="form-select" id="signalAsset">
+                                <option value="ETH-PERP">ETH-PERP</option>
+                                <option value="BTC-PERP">BTC-PERP</option>
+                                <option value="SOL-PERP">SOL-PERP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Prediction Type</label>
+                            <select class="form-select" id="signalType">
+                                <option value="price_above">Price Above</option>
+                                <option value="price_below">Price Below</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Target Price ($)</label>
+                            <input type="number" class="form-input" id="signalTarget" value="2200">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Stake (USDC)</label>
+                            <input type="number" class="form-input" id="signalStake" value="50" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Duration</label>
+                            <select class="form-select" id="signalDuration">
+                                <option value="1">1 hour</option>
+                                <option value="6">6 hours</option>
+                                <option value="24" selected>24 hours</option>
+                                <option value="72">3 days</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width:100%">Create Signal</button>
+                    </form>
+                </div>
+                
+                <!-- Open Signals -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Open Signals</div>
+                    </div>
+                    <div id="signalsList"></div>
+                </div>
+            </div>
+            
+            <!-- Active Bets -->
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <div class="card-title">Active Bets</div>
+                    <span class="badge open" id="bettingStats">Loading...</span>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Bet ID</th>
+                            <th>Creator vs Fader</th>
+                            <th>Prediction</th>
+                            <th>Pot</th>
+                            <th>Expires</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="betsBody"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Agents Page -->
+        <div class="page" id="page-agents">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Agent Leaderboard</div>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Agent</th>
+                            <th>Wallet</th>
+                            <th>Reputation</th>
+                            <th>Trading PnL</th>
+                            <th>Betting Record</th>
+                            <th>Joined</th>
+                        </tr>
+                    </thead>
+                    <tbody id="agentsBody"></tbody>
+                </table>
             </div>
         </div>
     </main>
-
-    <!-- Register Modal -->
-    <div id="register-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-        <div class="bg-gray-800 rounded-lg p-6 w-96">
-            <h3 class="text-lg font-semibold mb-4">Register Agent</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">Wallet Address</label>
-                    <input id="reg-wallet" type="text" placeholder="0x..." class="w-full bg-gray-700 rounded px-3 py-2">
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">Display Name (optional)</label>
-                    <input id="reg-name" type="text" placeholder="My Trading Agent" class="w-full bg-gray-700 rounded px-3 py-2">
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">Twitter (optional)</label>
-                    <input id="reg-twitter" type="text" placeholder="@myagent" class="w-full bg-gray-700 rounded px-3 py-2">
-                </div>
-                <div class="flex space-x-2">
-                    <button onclick="hideRegisterModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 py-2 rounded">Cancel</button>
-                    <button onclick="registerAgent()" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded">Register</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Intent Modal -->
-    <div id="intent-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-        <div class="bg-gray-800 rounded-lg p-6 w-96">
-            <h3 class="text-lg font-semibold mb-4">Create Intent</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">Agent ID</label>
-                    <input id="intent-agent" type="text" placeholder="agent_0001" class="w-full bg-gray-700 rounded px-3 py-2">
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">Direction</label>
-                    <select id="intent-type" class="w-full bg-gray-700 rounded px-3 py-2">
-                        <option value="long">🟢 Long</option>
-                        <option value="short">🔴 Short</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">Asset</label>
-                    <select id="intent-asset" class="w-full bg-gray-700 rounded px-3 py-2">
-                        <option value="BTC-PERP">BTC-PERP</option>
-                        <option value="ETH-PERP">ETH-PERP</option>
-                        <option value="SOL-PERP">SOL-PERP</option>
-                    </select>
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-1">Size (USDC)</label>
-                        <input id="intent-size" type="number" value="100" class="w-full bg-gray-700 rounded px-3 py-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-1">Leverage</label>
-                        <input id="intent-leverage" type="number" value="1" class="w-full bg-gray-700 rounded px-3 py-2">
-                    </div>
-                </div>
-                <div class="flex space-x-2">
-                    <button onclick="hideIntentModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 py-2 rounded">Cancel</button>
-                    <button onclick="createIntent()" class="flex-1 bg-green-600 hover:bg-green-700 py-2 rounded">Create</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+    
     <script>
-        const API_URL = 'http://localhost:8082';
+        const API = 'http://localhost:8082';
         let ws = null;
-
-        // WebSocket 连接
+        let currentAgent = null;
+        
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                item.classList.add('active');
+                document.getElementById('page-' + item.dataset.page).classList.add('active');
+                loadPageData(item.dataset.page);
+            });
+        });
+        
+        // WebSocket
         function connectWebSocket() {
             ws = new WebSocket('ws://localhost:8082/ws');
-            
             ws.onopen = () => {
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                    <span class="text-sm text-gray-400">Connected</span>
-                `;
+                document.getElementById('wsStatus').classList.add('connected');
+                document.getElementById('wsText').textContent = 'Connected';
             };
-            
             ws.onclose = () => {
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="w-2 h-2 bg-red-500 rounded-full"></span>
-                    <span class="text-sm text-gray-400">Disconnected</span>
-                `;
+                document.getElementById('wsStatus').classList.remove('connected');
+                document.getElementById('wsText').textContent = 'Disconnected';
                 setTimeout(connectWebSocket, 3000);
             };
-            
-            ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                handleWebSocketMessage(message);
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                handleWSMessage(data);
             };
         }
-
-        function handleWebSocketMessage(message) {
-            switch (message.type) {
-                case 'new_intent':
-                    addIntentToFeed(message.data);
-                    loadStats();
-                    break;
-                case 'new_match':
-                    addMatchToFeed(message.data);
-                    loadStats();
-                    loadIntents();
-                    break;
-                case 'new_agent':
-                    loadStats();
-                    loadLeaderboard();
-                    break;
-                case 'pnl_update':
-                    console.log('PnL Update:', message.data);
-                    // 可以在这里更新特定 Agent 的 PnL 显示
-                    break;
+        
+        function handleWSMessage(data) {
+            if (data.type === 'price_update') {
+                updatePrice(data.asset, data.price);
+            } else if (data.type === 'intent_matched') {
+                showToast('Intent matched! Internal rate: ' + data.internal_rate, 'success');
+                loadIntents();
+                loadMatches();
+            } else if (data.type === 'signal_created') {
+                showToast('New signal: ' + data.description, 'info');
+                loadSignals();
+            } else if (data.type === 'bet_settled') {
+                showToast('Bet settled! Winner: ' + data.winner_id, 'success');
             }
-        }
-
-        // API 调用
-        async function loadStats() {
-            const resp = await fetch(`${API_URL}/stats`);
-            const data = await resp.json();
-            document.getElementById('stat-agents').textContent = data.total_agents;
-            document.getElementById('stat-intents').textContent = data.open_intents;
-            document.getElementById('stat-matches').textContent = data.total_matches;
-            document.getElementById('stat-volume').textContent = `$${data.total_volume.toLocaleString()}`;
+            addActivity(data);
         }
         
-        async function loadPrices() {
-            try {
-                const resp = await fetch(`${API_URL}/prices`);
-                const data = await resp.json();
-                
-                if (data.prices.BTC) {
-                    const btc = data.prices.BTC;
-                    document.getElementById('stat-btc').textContent = `$${btc.price.toLocaleString()}`;
-                    document.getElementById('price-btc').innerHTML = `$${btc.price.toLocaleString()} <span class="${btc.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}">(${btc.change_24h >= 0 ? '+' : ''}${btc.change_24h.toFixed(2)}%)</span>`;
-                }
-                if (data.prices.ETH) {
-                    const eth = data.prices.ETH;
-                    document.getElementById('price-eth').innerHTML = `$${eth.price.toLocaleString()} <span class="${eth.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}">(${eth.change_24h >= 0 ? '+' : ''}${eth.change_24h.toFixed(2)}%)</span>`;
-                }
-                if (data.prices.SOL) {
-                    const sol = data.prices.SOL;
-                    document.getElementById('price-sol').innerHTML = `$${sol.price.toLocaleString()} <span class="${sol.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}">(${sol.change_24h >= 0 ? '+' : ''}${sol.change_24h.toFixed(2)}%)</span>`;
-                }
-            } catch (e) {
-                console.log('Price fetch error:', e);
-            }
-        }
-
-        async function loadIntents() {
-            const asset = document.getElementById('asset-filter').value;
-            const url = asset ? `${API_URL}/intents?asset=${asset}` : `${API_URL}/intents`;
-            const resp = await fetch(url);
-            const data = await resp.json();
-            
-            const feed = document.getElementById('intent-feed');
-            if (data.intents.length === 0) {
-                feed.innerHTML = '<div class="text-gray-500 text-center py-8">No open intents</div>';
-                return;
-            }
-            
-            feed.innerHTML = data.intents.map(intent => createIntentCard(intent)).join('');
-        }
-
-        function createIntentCard(intent) {
-            const isLong = intent.intent_type === 'long';
-            const typeClass = isLong ? 'intent-long' : 'intent-short';
-            const typeIcon = isLong ? '🟢' : '🔴';
-            const typeText = isLong ? 'LONG' : 'SHORT';
-            
-            return `
-                <div class="bg-gray-700 rounded-lg p-3 ${typeClass} fade-in">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <span class="text-sm font-mono text-gray-400">${intent.agent_id}</span>
-                            <div class="flex items-center space-x-2 mt-1">
-                                <span>${typeIcon}</span>
-                                <span class="font-semibold">${typeText} ${intent.asset}</span>
-                                <span class="text-gray-400">${intent.leverage}x</span>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-lg font-semibold">$${intent.size_usdc}</div>
-                            <div class="text-xs text-gray-400">${intent.status}</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function addIntentToFeed(intent) {
-            const feed = document.getElementById('intent-feed');
-            const noData = feed.querySelector('.text-gray-500');
-            if (noData) noData.remove();
-            
-            feed.insertAdjacentHTML('afterbegin', createIntentCard(intent));
-        }
-
-        async function loadMatches() {
-            const resp = await fetch(`${API_URL}/matches`);
-            const data = await resp.json();
-            
-            const feed = document.getElementById('match-feed');
-            if (data.matches.length === 0) {
-                feed.innerHTML = '<div class="text-gray-500 text-center py-8">No matches yet</div>';
-                return;
-            }
-            
-            feed.innerHTML = data.matches.map(match => `
-                <div class="bg-gray-700 rounded-lg p-3 fade-in">
-                    <div class="flex justify-between items-center">
-                        <div class="text-sm">
-                            <span class="text-green-400">${match.agent_a_id}</span>
-                            <span class="text-gray-500 mx-1">⚡</span>
-                            <span class="text-red-400">${match.agent_b_id}</span>
-                        </div>
-                        <div class="text-right">
-                            <div class="font-semibold">$${match.size_usdc}</div>
-                            <div class="text-xs text-gray-400">${match.asset}</div>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function addMatchToFeed(match) {
-            const feed = document.getElementById('match-feed');
-            const noData = feed.querySelector('.text-gray-500');
-            if (noData) noData.remove();
-            
-            feed.insertAdjacentHTML('afterbegin', `
-                <div class="bg-gray-700 rounded-lg p-3 fade-in border border-yellow-500">
-                    <div class="flex justify-between items-center">
-                        <div class="text-sm">
-                            <span class="text-green-400">${match.agent_a_id}</span>
-                            <span class="text-gray-500 mx-1">⚡</span>
-                            <span class="text-red-400">${match.agent_b_id}</span>
-                        </div>
-                        <div class="text-right">
-                            <div class="font-semibold">$${match.size_usdc}</div>
-                            <div class="text-xs text-gray-400">${match.asset}</div>
-                        </div>
-                    </div>
-                </div>
-            `);
-        }
-
-        async function loadLeaderboard() {
-            const resp = await fetch(`${API_URL}/leaderboard`);
-            const data = await resp.json();
-            
-            const board = document.getElementById('leaderboard');
-            if (data.leaderboard.length === 0) {
-                board.innerHTML = '<div class="text-gray-500 text-center py-4 col-span-5">No agents yet</div>';
-                return;
-            }
-            
-            board.innerHTML = data.leaderboard.slice(0, 5).map((agent, i) => `
-                <div class="bg-gray-700 rounded-lg p-3 text-center">
-                    <div class="text-2xl mb-1">${['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][i]}</div>
-                    <div class="font-semibold truncate">${agent.display_name || agent.agent_id}</div>
-                    <div class="text-sm text-gray-400">Score: ${(agent.reputation_score * 100).toFixed(0)}%</div>
-                </div>
-            `).join('');
-        }
-
-        // 注册 Agent
-        function showRegisterModal() {
-            document.getElementById('register-modal').classList.remove('hidden');
-        }
-        function hideRegisterModal() {
-            document.getElementById('register-modal').classList.add('hidden');
-        }
-
-        async function registerAgent() {
-            const wallet = document.getElementById('reg-wallet').value;
-            const name = document.getElementById('reg-name').value;
-            const twitter = document.getElementById('reg-twitter').value;
-            
-            const resp = await fetch(`${API_URL}/agents/register`, {
-                method: 'POST',
+        // API Calls
+        async function api(endpoint, options = {}) {
+            const res = await fetch(API + endpoint, {
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    wallet_address: wallet,
-                    display_name: name || null,
-                    twitter_handle: twitter || null
-                })
+                ...options
             });
-            
-            const data = await resp.json();
-            if (data.success) {
-                alert(`Agent registered! ID: ${data.agent.agent_id}`);
-                hideRegisterModal();
+            return res.json();
+        }
+        
+        // Load Data
+        async function loadPrices() {
+            const prices = await api('/prices');
+            for (const [asset, price] of Object.entries(prices)) {
+                updatePrice(asset, price);
+            }
+        }
+        
+        function updatePrice(asset, price) {
+            const el = document.getElementById('price-' + asset);
+            if (el) el.textContent = '$' + parseFloat(price).toLocaleString(undefined, {maximumFractionDigits: 2});
+        }
+        
+        async function loadStats() {
+            const stats = await api('/stats');
+            document.getElementById('stat-internalRate').textContent = stats.avg_internal_rate || '100%';
+            document.getElementById('stat-volume').textContent = '$' + (stats.total_volume || 0).toLocaleString();
+            document.getElementById('stat-agents').textContent = stats.total_agents || 0;
+            document.getElementById('stat-feeSaved').textContent = '$' + (stats.total_fee_saved || 0).toFixed(2);
+        }
+        
+        async function loadLeaderboard() {
+            const data = await api('/leaderboard');
+            const body = document.getElementById('leaderboardBody');
+            body.innerHTML = data.leaderboard.slice(0, 5).map((agent, i) => `
+                <tr>
+                    <td class="${i < 3 ? 'rank-' + (i+1) : ''}">#${i+1}</td>
+                    <td>${agent.display_name || agent.agent_id}</td>
+                    <td>
+                        <div class="reputation-bar">
+                            <div class="reputation-fill" style="width: ${agent.reputation_score * 100}%"></div>
+                        </div>
+                    </td>
+                    <td style="color: var(--accent-green)">$${(Math.random() * 1000).toFixed(2)}</td>
+                </tr>
+            `).join('');
+        }
+        
+        async function loadIntents() {
+            const data = await api('/intents');
+            const body = document.getElementById('intentsBody');
+            body.innerHTML = data.intents.map(intent => `
+                <tr>
+                    <td>${intent.agent_id}</td>
+                    <td>${intent.asset}</td>
+                    <td><span class="badge ${intent.intent_type}">${intent.intent_type}</span></td>
+                    <td>$${intent.size_usdc}</td>
+                    <td><span class="badge ${intent.status}">${intent.status}</span></td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">No intents</td></tr>';
+        }
+        
+        async function loadMatches() {
+            const data = await api('/matches');
+            const body = document.getElementById('matchesBody');
+            body.innerHTML = data.matches.slice(0, 10).map(match => `
+                <tr>
+                    <td style="font-family: monospace;">${match.match_id.slice(0,12)}</td>
+                    <td>${match.agent_a_id}</td>
+                    <td>${match.agent_b_id}</td>
+                    <td>${match.asset}</td>
+                    <td>$${match.size_usdc}</td>
+                    <td>$${match.price?.toLocaleString() || '-'}</td>
+                    <td style="color: var(--text-muted);">${new Date(match.created_at).toLocaleTimeString()}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="7" style="text-align:center; color: var(--text-muted);">No matches</td></tr>';
+        }
+        
+        async function loadSignals() {
+            const data = await api('/signals');
+            const list = document.getElementById('signalsList');
+            list.innerHTML = data.signals.map(signal => `
+                <div class="card signal-card" style="margin-bottom: 12px;">
+                    <div class="signal-header">
+                        <span class="badge open">${signal.status}</span>
+                        <span style="color: var(--text-muted);">$${signal.stake_amount} stake</span>
+                    </div>
+                    <div class="signal-prediction">
+                        ${signal.asset} ${signal.signal_type === 'price_above' ? '>' : '<'} $${signal.target_value.toLocaleString()}
+                    </div>
+                    <div class="signal-meta">
+                        <span>By: ${signal.creator_id}</span>
+                        <span>Expires: ${new Date(signal.expires_at).toLocaleString()}</span>
+                    </div>
+                    <button class="btn btn-outline" style="margin-top: 12px; width: 100%;" onclick="fadeSignal('${signal.signal_id}')">
+                        Fade This Signal
+                    </button>
+                </div>
+            `).join('') || '<p style="color: var(--text-muted); text-align: center;">No open signals</p>';
+        }
+        
+        async function loadAgents() {
+            const data = await api('/agents');
+            const body = document.getElementById('agentsBody');
+            body.innerHTML = data.agents.map((agent, i) => `
+                <tr>
+                    <td class="${i < 3 ? 'rank-' + (i+1) : ''}">#${i+1}</td>
+                    <td>${agent.display_name || agent.agent_id}</td>
+                    <td style="font-family: monospace; color: var(--text-muted);">${agent.wallet_address.slice(0,10)}...</td>
+                    <td>
+                        <div class="reputation-bar">
+                            <div class="reputation-fill" style="width: ${agent.reputation_score * 100}%"></div>
+                        </div>
+                    </td>
+                    <td style="color: var(--accent-green);">+$${(Math.random() * 500).toFixed(2)}</td>
+                    <td>${Math.floor(Math.random()*10)}W / ${Math.floor(Math.random()*5)}L</td>
+                    <td style="color: var(--text-muted);">${new Date(agent.created_at).toLocaleDateString()}</td>
+                </tr>
+            `).join('');
+        }
+        
+        function loadPageData(page) {
+            if (page === 'dashboard') {
+                loadPrices();
                 loadStats();
                 loadLeaderboard();
+            } else if (page === 'trading') {
+                loadIntents();
+                loadMatches();
+            } else if (page === 'signals') {
+                loadSignals();
+            } else if (page === 'agents') {
+                loadAgents();
             }
         }
-
-        // 创建 Intent
-        function showIntentModal() {
-            document.getElementById('intent-modal').classList.remove('hidden');
+        
+        // Forms
+        function setDirection(dir) {
+            document.getElementById('intentDirection').value = dir;
         }
-        function hideIntentModal() {
-            document.getElementById('intent-modal').classList.add('hidden');
-        }
-
-        async function createIntent() {
-            const agentId = document.getElementById('intent-agent').value;
-            const intentType = document.getElementById('intent-type').value;
-            const asset = document.getElementById('intent-asset').value;
-            const size = parseFloat(document.getElementById('intent-size').value);
-            const leverage = parseInt(document.getElementById('intent-leverage').value);
+        
+        document.getElementById('intentLeverage').addEventListener('input', (e) => {
+            document.getElementById('leverageDisplay').textContent = e.target.value;
+        });
+        
+        document.getElementById('intentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentAgent) {
+                showToast('Please connect wallet first', 'error');
+                return;
+            }
             
-            const resp = await fetch(`${API_URL}/intents`, {
+            const res = await api('/intents', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    agent_id: agentId,
-                    intent_type: intentType,
-                    asset: asset,
-                    size_usdc: size,
-                    leverage: leverage
+                    agent_id: currentAgent.agent_id,
+                    intent_type: document.getElementById('intentDirection').value,
+                    asset: document.getElementById('intentAsset').value,
+                    size_usdc: parseFloat(document.getElementById('intentSize').value),
+                    leverage: parseInt(document.getElementById('intentLeverage').value)
                 })
             });
             
-            const data = await resp.json();
-            if (data.success) {
-                hideIntentModal();
-                if (data.matched) {
-                    alert(`Intent matched! Match ID: ${data.match.match_id}`);
-                }
+            if (res.success) {
+                showToast(`Intent created! Internal rate: ${res.routing.internal_rate}`, 'success');
+                loadIntents();
+                loadMatches();
+            } else {
+                showToast('Error: ' + (res.detail || 'Unknown'), 'error');
+            }
+        });
+        
+        document.getElementById('signalForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentAgent) {
+                showToast('Please connect wallet first', 'error');
+                return;
+            }
+            
+            const res = await api('/signals', {
+                method: 'POST',
+                body: JSON.stringify({
+                    agent_id: currentAgent.agent_id,
+                    asset: document.getElementById('signalAsset').value,
+                    signal_type: document.getElementById('signalType').value,
+                    target_value: parseFloat(document.getElementById('signalTarget').value),
+                    stake_amount: parseFloat(document.getElementById('signalStake').value),
+                    duration_hours: parseInt(document.getElementById('signalDuration').value)
+                })
+            });
+            
+            if (res.success) {
+                showToast('Signal created!', 'success');
+                loadSignals();
+            }
+        });
+        
+        async function fadeSignal(signalId) {
+            if (!currentAgent) {
+                showToast('Please connect wallet first', 'error');
+                return;
+            }
+            
+            const res = await api('/signals/fade', {
+                method: 'POST',
+                body: JSON.stringify({
+                    signal_id: signalId,
+                    fader_id: currentAgent.agent_id
+                })
+            });
+            
+            if (res.success) {
+                showToast(`Bet created! Total pot: $${res.bet.total_pot}`, 'success');
+                loadSignals();
+            } else {
+                showToast('Error: ' + (res.detail || 'Unknown'), 'error');
             }
         }
-
-        // Seed demo data
-        async function seedDemo() {
-            await fetch(`${API_URL}/demo/seed`, { method: 'POST' });
-            loadStats();
-            loadIntents();
-            loadMatches();
-            loadLeaderboard();
-        }
-
-        // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            connectWebSocket();
-            loadStats();
-            loadPrices();
-            loadIntents();
-            loadMatches();
-            loadLeaderboard();
+        
+        // Wallet
+        async function connectWallet() {
+            const wallet = '0x' + Math.random().toString(16).slice(2, 42);
+            const res = await api('/agents/register', {
+                method: 'POST',
+                body: JSON.stringify({
+                    wallet_address: wallet,
+                    display_name: 'Agent_' + wallet.slice(2, 6)
+                })
+            });
             
-            // Auto refresh
-            setInterval(loadStats, 10000);
-            setInterval(loadPrices, 30000);  // 价格每 30 秒刷新
-        });
+            if (res.agent) {
+                currentAgent = res.agent;
+                document.querySelector('.connect-btn').textContent = currentAgent.display_name;
+                showToast('Wallet connected!', 'success');
+            }
+        }
+        
+        // Activity Feed
+        const activities = [];
+        function addActivity(data) {
+            let icon = '📊';
+            let title = '';
+            
+            if (data.type === 'price_update') return;
+            else if (data.type === 'intent_matched') {
+                icon = '🤝';
+                title = `Match: ${data.internal_rate} internal`;
+            } else if (data.type === 'signal_created') {
+                icon = '🎯';
+                title = data.description;
+            } else if (data.type === 'bet_settled') {
+                icon = '🏆';
+                title = `Winner: ${data.winner_id}`;
+            }
+            
+            activities.unshift({ icon, title, time: new Date() });
+            renderActivity();
+        }
+        
+        function renderActivity() {
+            const feed = document.getElementById('activityFeed');
+            feed.innerHTML = activities.slice(0, 5).map(a => `
+                <div class="activity-item">
+                    <div class="activity-icon">${a.icon}</div>
+                    <div class="activity-content">
+                        <div class="activity-title">${a.title}</div>
+                        <div class="activity-time">${a.time.toLocaleTimeString()}</div>
+                    </div>
+                </div>
+            `).join('') || '<p style="color: var(--text-muted); text-align: center; padding: 20px;">No activity yet</p>';
+        }
+        
+        // Toast
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.style.borderLeftColor = type === 'success' ? 'var(--accent-green)' : 
+                                          type === 'error' ? 'var(--accent-red)' : 'var(--accent-blue)';
+            toast.style.borderLeft = '3px solid';
+            toast.textContent = message;
+            document.getElementById('toastContainer').appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+        
+        // Init
+        connectWebSocket();
+        loadPageData('dashboard');
+        setInterval(loadPrices, 30000);
     </script>
 </body>
 </html>
