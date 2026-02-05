@@ -26,3 +26,5 @@ logs/
 .env
 .env.local
 data/*.db
+*.pyc
+__pycache__/

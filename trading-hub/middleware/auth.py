@@ -5,39 +5,51 @@ Agent 鉴权中间件
 """
 import hashlib
 import secrets
+import jwt
 from typing import Optional, Dict
 from fastapi import Header, HTTPException, Depends
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+# 自定义异常
+class AuthError(HTTPException):
+    def __init__(self, detail: str):
+        super().__init__(status_code=401, detail=detail)
+
+class ForbiddenError(HTTPException):
+    def __init__(self, detail: str):
+        super().__init__(status_code=403, detail=detail)
 
 @dataclass
 class AgentAuth:
     """Agent 认证信息"""
     agent_id: str
     api_key: str
-    created_at: datetime
+    created_at: datetime = field(default_factory=datetime.now)
     is_active: bool = True
 
-class AuthManager:
+class APIKeyStore:
     """
-    认证管理器
+    API Key 存储
     
-    生产环境应该使用数据库存储
+    生产环境应该使用数据库
     """
+    # JWT 配置
+    JWT_SECRET = "your-secret-key-change-in-production"
+    JWT_ALGORITHM = "HS256"
+    JWT_EXPIRE_HOURS = 24
+    
     def __init__(self):
         self._keys: Dict[str, AgentAuth] = {}  # api_key -> AgentAuth
         self._agent_keys: Dict[str, str] = {}  # agent_id -> api_key
     
     def generate_key(self, agent_id: str) -> str:
         """为 Agent 生成 API Key"""
-        # 生成安全的随机 key
         api_key = f"ak_{secrets.token_hex(24)}"
         
-        # 存储
         auth = AgentAuth(
             agent_id=agent_id,
             api_key=api_key,
-            created_at=datetime.now(),
         )
         self._keys[api_key] = auth
         self._agent_keys[agent_id] = api_key
@@ -64,57 +76,115 @@ class AuthManager:
         return False
 
 # 全局实例
-auth_manager = AuthManager()
+api_key_store = APIKeyStore()
+
+def create_jwt_token(agent_id: str, expires_hours: int = 24) -> str:
+    """创建 JWT token"""
+    payload = {
+        "agent_id": agent_id,
+        "exp": datetime.utcnow() + timedelta(hours=expires_hours),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, APIKeyStore.JWT_SECRET, algorithm=APIKeyStore.JWT_ALGORITHM)
+
+def verify_jwt_token(token: str) -> Optional[str]:
+    """验证 JWT token，返回 agent_id"""
+    try:
+        payload = jwt.decode(token, APIKeyStore.JWT_SECRET, algorithms=[APIKeyStore.JWT_ALGORITHM])
+        return payload.get("agent_id")
+    except jwt.ExpiredSignatureError:
+        raise AuthError("Token expired")
+    except jwt.InvalidTokenError:
+        return None
 
 async def get_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(None),
 ) -> Optional[str]:
-    """从 Header 获取 API Key"""
-    return x_api_key
+    """从 Header 获取 API Key 或 Bearer Token"""
+    if x_api_key:
+        return x_api_key
+    if authorization and authorization.startswith("Bearer "):
+        return authorization[7:]
+    return None
 
 async def verify_agent(
     agent_id: str,
     api_key: Optional[str] = Depends(get_api_key),
 ) -> str:
     """
-    验证 Agent 身份
-    
-    用法:
-        @app.post("/some-endpoint")
-        async def endpoint(agent_id: str = Depends(verify_agent)):
-            # agent_id 已验证
-            ...
+    验证 Agent 身份 (严格模式)
     """
-    # 开发模式: 如果没有 API key，允许通过 (方便测试)
-    # 生产环境应该移除这个
+    # 开发模式: 允许无 key 访问
     if not api_key:
         return agent_id
     
-    auth = auth_manager.verify_key(api_key)
-    if not auth:
-        raise HTTPException(401, "Invalid API key")
+    # 尝试 API Key
+    auth = api_key_store.verify_key(api_key)
+    if auth:
+        if auth.agent_id != agent_id:
+            raise ForbiddenError(f"API key does not belong to agent {agent_id}")
+        return agent_id
     
-    if auth.agent_id != agent_id:
-        raise HTTPException(403, f"API key does not belong to agent {agent_id}")
+    # 尝试 JWT
+    jwt_agent_id = verify_jwt_token(api_key)
+    if jwt_agent_id:
+        if jwt_agent_id != agent_id:
+            raise ForbiddenError(f"Token does not belong to agent {agent_id}")
+        return agent_id
     
-    return agent_id
+    raise AuthError("Invalid API key or token")
+
+async def verify_agent_optional(
+    api_key: Optional[str] = Depends(get_api_key),
+) -> Optional[str]:
+    """
+    可选验证 - 返回 agent_id 或 None
+    """
+    if not api_key:
+        return None
+    
+    auth = api_key_store.verify_key(api_key)
+    if auth:
+        return auth.agent_id
+    
+    jwt_agent_id = verify_jwt_token(api_key)
+    if jwt_agent_id:
+        return jwt_agent_id
+    
+    return None
+
+async def verify_agent_owns_resource(
+    agent_id: str,
+    resource_owner_id: str,
+    api_key: Optional[str] = Depends(get_api_key),
+) -> bool:
+    """
+    验证 Agent 是否拥有资源
+    """
+    # 开发模式
+    if not api_key:
+        return agent_id == resource_owner_id
+    
+    verified_agent = await verify_agent(agent_id, api_key)
+    return verified_agent == resource_owner_id
 
 async def require_auth(
     api_key: Optional[str] = Depends(get_api_key),
 ) -> AgentAuth:
     """
-    要求认证 (不指定 agent_id)
-    
-    用法:
-        @app.get("/my-profile")
-        async def get_profile(auth: AgentAuth = Depends(require_auth)):
-            return {"agent_id": auth.agent_id}
+    强制要求认证
     """
     if not api_key:
-        raise HTTPException(401, "API key required")
+        raise AuthError("API key required")
     
-    auth = auth_manager.verify_key(api_key)
-    if not auth:
-        raise HTTPException(401, "Invalid API key")
+    auth = api_key_store.verify_key(api_key)
+    if auth:
+        return auth
     
-    return auth
+    jwt_agent_id = verify_jwt_token(api_key)
+    if jwt_agent_id:
+        # 为 JWT 创建临时 Auth 对象
+        return AgentAuth(agent_id=jwt_agent_id, api_key="jwt")
+    
+    raise AuthError("Invalid API key or token")

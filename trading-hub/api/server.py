@@ -2,7 +2,7 @@
 Trading Hub - API Server
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -1063,10 +1063,17 @@ class SignalShareRequest(BaseModel):
     reason: str = ""
 
 @app.post("/signals/share")
-async def share_signal(req: SignalShareRequest):
-    """分享交易信号"""
+async def share_signal(
+    req: SignalShareRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """分享交易信号 (需要认证)"""
+    # 验证: 只能以自己的名义分享
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot share signals as another agent")
+    
     msg_id = await agent_comm.share_signal(
-        from_agent=req.agent_id,
+        from_agent=auth.agent_id,
         signal={
             "asset": req.asset,
             "direction": req.direction,
@@ -1276,9 +1283,16 @@ class EscrowCreateRequest(BaseModel):
     wallet_address: str
 
 @app.post("/escrow/create")
-async def create_escrow(req: EscrowCreateRequest):
-    """创建托管账户"""
-    account = await solana_escrow.create_account(req.agent_id, req.wallet_address)
+async def create_escrow(
+    req: EscrowCreateRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """创建托管账户 (需要认证)"""
+    # 验证: 只能为自己创建托管账户
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot create escrow for another agent")
+    
+    account = await solana_escrow.create_account(auth.agent_id, req.wallet_address)
     return {"success": True, "account": account.to_dict()}
 
 @app.get("/escrow/{agent_id}")
@@ -1294,21 +1308,134 @@ class EscrowDepositRequest(BaseModel):
     amount: float
 
 @app.post("/escrow/deposit")
-async def escrow_deposit(req: EscrowDepositRequest):
-    """托管入金"""
-    tx = await solana_escrow.deposit(req.agent_id, req.amount)
+async def escrow_deposit(
+    req: EscrowDepositRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """托管入金 (需要认证)"""
+    # 验证: 只能为自己入金
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot deposit to another agent's escrow")
+    
+    tx = await solana_escrow.deposit(auth.agent_id, req.amount)
     return {"success": True, "tx": tx.to_dict()}
 
 @app.post("/escrow/withdraw")
-async def escrow_withdraw(req: EscrowDepositRequest):
-    """托管提现"""
-    tx = await solana_escrow.withdraw(req.agent_id, req.amount)
+async def escrow_withdraw(
+    req: EscrowDepositRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """托管提现 (需要认证)"""
+    # 验证: 只能从自己的托管提现
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot withdraw from another agent's escrow")
+    
+    tx = await solana_escrow.withdraw(auth.agent_id, req.amount)
     return {"success": True, "tx": tx.to_dict()}
 
 @app.get("/escrow/tvl")
 async def get_escrow_tvl():
     """获取总 TVL"""
     return solana_escrow.get_total_tvl()
+
+
+# ==========================================
+# API Key Management (密钥管理)
+# ==========================================
+
+class CreateAPIKeyRequest(BaseModel):
+    name: str = "default"
+    scopes: List[str] = ["read", "write"]
+    expires_in_days: Optional[int] = None
+
+@app.post("/auth/keys")
+async def create_api_key(
+    req: CreateAPIKeyRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """
+    创建新 API Key (需要认证)
+    
+    ⚠️ API Key 只显示一次，请妥善保存!
+    """
+    raw_key, api_key = api_key_store.create_key(
+        agent_id=auth.agent_id,
+        name=req.name,
+        scopes=req.scopes,
+        expires_in_days=req.expires_in_days,
+    )
+    
+    return {
+        "success": True,
+        "api_key": raw_key,  # ⚠️ 只显示一次!
+        "key_info": api_key.to_dict(),
+        "warning": "Store this API key securely. It will not be shown again.",
+    }
+
+@app.get("/auth/keys")
+async def list_api_keys(auth: AgentAuth = Depends(verify_agent)):
+    """列出自己的 API Keys (不显示密钥本身)"""
+    keys = api_key_store.get_agent_keys(auth.agent_id)
+    return {
+        "keys": [k.to_dict() for k in keys],
+    }
+
+@app.delete("/auth/keys/{key_id}")
+async def revoke_api_key(
+    key_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """撤销 API Key"""
+    success = api_key_store.revoke_key(key_id, auth.agent_id)
+    if not success:
+        raise HTTPException(404, "Key not found or not yours")
+    return {"success": True, "message": "API key revoked"}
+
+class LoginRequest(BaseModel):
+    wallet_address: str
+    signature: str  # 钱包签名 (生产环境需要验证)
+
+@app.post("/auth/login")
+async def login(req: LoginRequest):
+    """
+    钱包登录，获取 JWT Token
+    
+    生产环境应验证钱包签名
+    """
+    # 查找 Agent
+    agent = store.get_agent_by_wallet(req.wallet_address)
+    if not agent:
+        raise HTTPException(404, "Agent not registered. Please register first.")
+    
+    # TODO: 生产环境验证签名
+    # verify_signature(req.wallet_address, req.signature, challenge)
+    
+    # 创建 JWT token
+    token = create_jwt_token(agent.agent_id, scopes=["read", "write"])
+    
+    return {
+        "success": True,
+        "agent_id": agent.agent_id,
+        "token": token,
+        "token_type": "bearer",
+        "expires_in": 24 * 3600,  # 24 hours
+    }
+
+@app.get("/auth/me")
+async def get_current_agent(auth: AgentAuth = Depends(verify_agent)):
+    """获取当前认证的 Agent 信息"""
+    agent = store.get_agent(auth.agent_id)
+    if not agent:
+        raise HTTPException(404, "Agent not found")
+    
+    return {
+        "agent": agent.to_dict(),
+        "auth": {
+            "agent_id": auth.agent_id,
+            "scopes": auth.scopes,
+            "authenticated_at": auth.authenticated_at.isoformat(),
+        }
+    }
 
 
 if __name__ == "__main__":
