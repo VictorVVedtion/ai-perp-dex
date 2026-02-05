@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Market, TradeRequest } from '@/lib/api';
+import { WS_URL as CONFIG_WS_URL } from '@/lib/config';
 
-const WS_URL = 'ws://localhost:8082/ws';
+const WS_URL = CONFIG_WS_URL;
+
+// 性能优化：消息节流（每 100ms 最多更新一次 UI）
+const THROTTLE_MS = 100;
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -42,6 +46,31 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  
+  // 节流相关
+  const pendingUpdates = useRef<Partial<WSData>>({});
+  const throttleTimeout = useRef<NodeJS.Timeout | null>(null);
+  
+  // 节流更新函数
+  const throttledSetData = useCallback((updates: Partial<WSData>) => {
+    // 合并 pending updates
+    pendingUpdates.current = {
+      ...pendingUpdates.current,
+      ...updates,
+    };
+    
+    // 如果没有 pending 的更新，设置定时器
+    if (!throttleTimeout.current) {
+      throttleTimeout.current = setTimeout(() => {
+        setData(prev => ({
+          ...prev,
+          ...pendingUpdates.current,
+        }));
+        pendingUpdates.current = {};
+        throttleTimeout.current = null;
+      }, THROTTLE_MS);
+    }
+  }, []);
 
   const connect = useCallback(() => {
     // Cleanup existing connection
@@ -67,18 +96,18 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
           switch (msg.type) {
             case 'markets':
             case 'market_update':
-              setData(prev => ({
-                ...prev,
-                markets: Array.isArray(msg.data) ? msg.data.map(parseMarket) : prev.markets,
-              }));
+              // 使用节流更新
+              throttledSetData({
+                markets: Array.isArray(msg.data) ? msg.data.map(parseMarket) : data.markets,
+              });
               break;
 
             case 'requests':
             case 'request_update':
-              setData(prev => ({
-                ...prev,
-                requests: Array.isArray(msg.data) ? msg.data.map(parseRequest) : prev.requests,
-              }));
+              // 使用节流更新
+              throttledSetData({
+                requests: Array.isArray(msg.data) ? msg.data.map(parseRequest) : data.requests,
+              });
               break;
 
             case 'new_request':
