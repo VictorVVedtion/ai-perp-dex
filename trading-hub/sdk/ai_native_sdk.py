@@ -502,6 +502,121 @@ class AINativeSDK:
             print(f"Momentum: SHORT (24h change: {change:.1f}%) - {result.message}")
     
     # ==========================================
+    # 持仓管理 + 止盈止损
+    # ==========================================
+    
+    async def get_positions(self) -> List[dict]:
+        """获取我的持仓"""
+        await self._ensure_agent()
+        await self._ensure_session()
+        
+        async with self.session.get(f"{self.base_url}/positions/{self.agent_id}") as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get("positions", [])
+            return []
+    
+    async def get_portfolio(self) -> dict:
+        """获取投资组合概览"""
+        await self._ensure_agent()
+        await self._ensure_session()
+        
+        async with self.session.get(f"{self.base_url}/portfolio/{self.agent_id}") as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return {}
+    
+    async def set_stop_loss(self, position_id: str, price: float) -> bool:
+        """设置止损"""
+        await self._ensure_session()
+        async with self.session.post(
+            f"{self.base_url}/positions/{position_id}/stop-loss",
+            json={"price": price}
+        ) as resp:
+            return resp.status == 200
+    
+    async def set_take_profit(self, position_id: str, price: float) -> bool:
+        """设置止盈"""
+        await self._ensure_session()
+        async with self.session.post(
+            f"{self.base_url}/positions/{position_id}/take-profit",
+            json={"price": price}
+        ) as resp:
+            return resp.status == 200
+    
+    async def close_position(self, position_id: str) -> TradeResult:
+        """手动平仓"""
+        await self._ensure_session()
+        async with self.session.post(f"{self.base_url}/positions/{position_id}/close") as resp:
+            data = await resp.json()
+            if data.get("success"):
+                return TradeResult(success=True, message=f"Position closed. PnL: ${data.get('pnl', 0):.2f}")
+            return TradeResult(success=False, message=data.get("detail", "Failed"))
+    
+    # ==========================================
+    # 风控告警
+    # ==========================================
+    
+    async def get_alerts(self) -> List[dict]:
+        """获取风控告警"""
+        await self._ensure_agent()
+        await self._ensure_session()
+        
+        async with self.session.get(f"{self.base_url}/alerts/{self.agent_id}") as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get("alerts", [])
+            return []
+    
+    async def acknowledge_alert(self, alert_id: str) -> bool:
+        """确认告警"""
+        await self._ensure_session()
+        async with self.session.post(f"{self.base_url}/alerts/{alert_id}/ack") as resp:
+            return resp.status == 200
+    
+    def on_alert(self, callback: Callable):
+        """注册告警回调 (WebSocket)"""
+        async def wrapper(data):
+            if data.get("type") == "risk_alert" and data.get("agent_id") == self.agent_id:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(data)
+                else:
+                    callback(data)
+        self._on_signal_callbacks.append(wrapper)
+        return self
+    
+    # ==========================================
+    # 策略回测
+    # ==========================================
+    
+    async def backtest(
+        self,
+        strategy_name: str,
+        asset: str = "ETH",
+        days: int = 30,
+        initial_capital: float = 1000,
+    ) -> dict:
+        """
+        回测策略
+        
+        可用策略: momentum, grid, dca
+        """
+        await self._ensure_session()
+        
+        async with self.session.post(
+            f"{self.base_url}/backtest",
+            json={
+                "strategy": strategy_name,
+                "asset": asset,
+                "days": days,
+                "initial_capital": initial_capital,
+            }
+        ) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return {"error": "Backtest failed"}
+    
+    # ==========================================
     # 工具方法
     # ==========================================
     

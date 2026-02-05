@@ -317,6 +317,25 @@ async def create_intent(req: IntentRequest):
     fee_saved = internal_filled * 0.00025  # 0.025% HL fee
     total_fee = sum(f.fee for f in external_fills)
     
+    # === 创建持仓 ===
+    entry_price = price_feed.get_cached_price(intent.asset)
+    if entry_price > 0:
+        try:
+            position = position_manager.open_position(
+                agent_id=req.agent_id,
+                asset=req.asset,
+                side=req.intent_type,
+                size_usdc=req.size_usdc,
+                entry_price=entry_price,
+                leverage=req.leverage,
+            )
+            position_data = position.to_dict()
+        except ValueError as e:
+            # 风控拒绝，但 Intent 已创建
+            position_data = {"error": str(e)}
+    else:
+        position_data = None
+    
     return {
         "success": True,
         "intent": intent.to_dict(),
@@ -330,6 +349,7 @@ async def create_intent(req: IntentRequest):
         },
         "internal_match": internal_match.to_dict() if internal_match else None,
         "external_fills": [f.to_dict() for f in external_fills],
+        "position": position_data,
     }
 
 @app.get("/intents/{intent_id}")
@@ -661,6 +681,169 @@ async def get_betting_stats():
 async def get_agent_betting_stats(agent_id: str):
     """获取 Agent 的对赌统计"""
     return signal_betting.get_agent_stats(agent_id)
+
+
+# ==========================================
+# Position Management API (持仓管理)
+# ==========================================
+
+from services.position_manager import position_manager, PositionSide
+
+@app.on_event("startup")
+async def startup_position_manager():
+    """启动持仓管理器"""
+    position_manager.price_feed = price_feed
+    await position_manager.start()
+
+@app.get("/positions/{agent_id}")
+async def get_positions(agent_id: str):
+    """获取 Agent 的持仓"""
+    positions = position_manager.get_positions(agent_id)
+    
+    # 更新价格 (使用同步缓存方法)
+    for pos in positions:
+        asset = pos.asset.replace("-PERP", "")
+        price = price_feed.get_cached_price(asset)
+        pos.update_pnl(price)
+    
+    return {
+        "agent_id": agent_id,
+        "positions": [p.to_dict() for p in positions],
+    }
+
+@app.get("/portfolio/{agent_id}")
+async def get_portfolio(agent_id: str):
+    """获取投资组合概览"""
+    # 先更新所有价格 (使用同步缓存方法)
+    for pos in position_manager.get_positions(agent_id):
+        asset = pos.asset.replace("-PERP", "")
+        price = price_feed.get_cached_price(asset)
+        pos.update_pnl(price)
+    
+    return position_manager.get_portfolio_value(agent_id)
+
+class StopLossRequest(BaseModel):
+    price: float
+
+@app.post("/positions/{position_id}/stop-loss")
+async def set_stop_loss(position_id: str, req: StopLossRequest):
+    """设置止损"""
+    try:
+        position_manager.set_stop_loss(position_id, req.price)
+        return {"success": True}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.post("/positions/{position_id}/take-profit")
+async def set_take_profit(position_id: str, req: StopLossRequest):
+    """设置止盈"""
+    try:
+        position_manager.set_take_profit(position_id, req.price)
+        return {"success": True}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.post("/positions/{position_id}/close")
+async def close_position(position_id: str):
+    """手动平仓"""
+    try:
+        pos = position_manager.positions.get(position_id)
+        if not pos:
+            raise ValueError("Position not found")
+        
+        asset = pos.asset.replace("-PERP", "")
+        price = price_feed.get_price(asset)
+        pos = position_manager.close_position_manual(position_id, price)
+        
+        return {
+            "success": True,
+            "position_id": position_id,
+            "close_price": price,
+            "pnl": pos.realized_pnl,
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+# ==========================================
+# Risk Alerts API (风控告警)
+# ==========================================
+
+@app.get("/alerts/{agent_id}")
+async def get_alerts(agent_id: str):
+    """获取风控告警"""
+    alerts = position_manager.get_alerts(agent_id)
+    return {
+        "agent_id": agent_id,
+        "alerts": [
+            {
+                "alert_id": a.alert_id,
+                "type": a.alert_type,
+                "message": a.message,
+                "severity": a.severity,
+                "created_at": a.created_at.isoformat(),
+                "acknowledged": a.acknowledged,
+            }
+            for a in alerts
+        ],
+    }
+
+@app.post("/alerts/{alert_id}/ack")
+async def acknowledge_alert(alert_id: str):
+    """确认告警"""
+    position_manager.acknowledge_alert(alert_id)
+    return {"success": True}
+
+# ==========================================
+# Backtest API (策略回测)
+# ==========================================
+
+from services.backtester import backtester, strategy_momentum, strategy_grid
+from datetime import datetime, timedelta
+
+class BacktestRequest(BaseModel):
+    strategy: str  # "momentum", "grid"
+    asset: str = "ETH"
+    days: int = 30
+    initial_capital: float = 1000
+
+@app.post("/backtest")
+async def run_backtest(req: BacktestRequest):
+    """运行策略回测"""
+    # 选择策略
+    if req.strategy == "momentum":
+        strategy = strategy_momentum
+    elif req.strategy == "grid":
+        strategy = strategy_grid
+    else:
+        raise HTTPException(400, f"Unknown strategy: {req.strategy}")
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=req.days)
+    
+    result = await backtester.run(
+        strategy=strategy,
+        asset=req.asset,
+        start_date=start_date,
+        end_date=end_date,
+        initial_capital=req.initial_capital,
+    )
+    
+    return {
+        "strategy": req.strategy,
+        "asset": req.asset,
+        "period_days": req.days,
+        "initial_capital": result.initial_capital,
+        "final_capital": round(result.final_capital, 2),
+        "total_return": round(result.total_return, 2),
+        "total_return_pct": round(result.total_return_pct, 2),
+        "max_drawdown_pct": round(result.max_drawdown_pct, 2),
+        "sharpe_ratio": round(result.sharpe_ratio, 2),
+        "win_rate": round(result.win_rate, 1),
+        "profit_factor": round(result.profit_factor, 2),
+        "total_trades": result.total_trades,
+        "winning_trades": result.winning_trades,
+        "losing_trades": result.losing_trades,
+    }
 
 
 if __name__ == "__main__":
