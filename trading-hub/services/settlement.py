@@ -79,7 +79,7 @@ class Settlement:
 class AgentBalance:
     """Agent 余额"""
     agent_id: str
-    balance_usdc: float = 1000.0  # 起始 $1000
+    balance_usdc: float = 0.0  # 起始 $0，需要先存款
     locked_usdc: float = 0.0  # 锁定中 (等待结算)
     total_deposited: float = 0.0
     total_withdrawn: float = 0.0

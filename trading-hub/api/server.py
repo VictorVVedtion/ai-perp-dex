@@ -171,7 +171,7 @@ class IntentRequest(BaseModel):
     intent_type: str  # "long" | "short"
     asset: str = "ETH-PERP"
     size_usdc: float = Field(default=100, gt=0, description="Size must be > 0")
-    leverage: int = Field(default=1, ge=1, le=100, description="Leverage 1-100x")
+    leverage: int = Field(default=1, ge=1, le=20, description="Leverage 1-20x (max 20x)")
     max_slippage: float = 0.005
     reason: str = ""  # AI 推理理由 (Agent Thoughts)
     
@@ -445,6 +445,22 @@ async def create_intent(
     allowed, msg = rate_limiter.check(req.agent_id)
     if not allowed:
         raise HTTPException(status_code=429, detail=msg)
+    
+    # P1 修复: 余额检查 - 确保有足够保证金
+    balance_info = settlement_engine.get_balance(req.agent_id)
+    if not balance_info:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    available_balance = balance_info.available
+    required_margin = req.size_usdc / req.leverage  # 所需保证金
+    trading_fee = req.size_usdc * 0.001  # 0.1% 手续费
+    total_required = required_margin + trading_fee
+    
+    if available_balance < total_required:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Insufficient balance. Required: ${total_required:.2f} (margin: ${required_margin:.2f} + fee: ${trading_fee:.2f}), Available: ${available_balance:.2f}"
+        )
     
     intent_type = IntentType(req.intent_type)
     
