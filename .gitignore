@@ -1,18 +1,24 @@
-# Rust
-target/
-Cargo.lock
-**/*.rs.bk
-
-# Solana/Anchor
-.anchor/
-test-ledger/
+# Dependencies
 node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Build
+target/
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+*.local
 
 # IDE
 .idea/
 .vscode/
 *.swp
-*.swo
 
 # OS
 .DS_Store
@@ -22,9 +28,16 @@ Thumbs.db
 *.log
 logs/
 
-# Environment
-.env
-.env.local
-data/*.db
-*.pyc
-__pycache__/
+# Test
+.pytest_cache/
+.coverage
+
+# Credentials (NEVER commit)
+*credentials*
+*secret*
+*.pem
+*.key
+
+# Solana
+solana-program/target/
+test-ledger/
