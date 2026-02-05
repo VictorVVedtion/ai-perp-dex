@@ -184,6 +184,13 @@ async def register_agent(req: RegisterRequest):
         twitter_handle=req.twitter_handle,
     )
     
+    # 同时注册到通讯系统
+    agent_comm.register(
+        agent_id=agent.agent_id,
+        name=req.display_name or agent.agent_id,
+        specialties=["trading"],
+    )
+    
     # 广播新 Agent
     await manager.broadcast({
         "type": "new_agent",
@@ -191,6 +198,17 @@ async def register_agent(req: RegisterRequest):
     })
     
     return {"success": True, "agent": agent.to_dict()}
+
+# 注意: /agents/discover 必须在 /agents/{agent_id} 之前，否则会被拦截
+@app.get("/agents/discover")
+async def discover_agents_route(specialty: str = None, min_trades: int = None):
+    """发现其他 Agent"""
+    agents = agent_comm.discover(
+        specialty=specialty,
+        min_trades=min_trades,
+        online_only=False,  # 默认显示所有
+    )
+    return {"agents": [a.to_dict() for a in agents]}
 
 @app.get("/agents/{agent_id}")
 async def get_agent(agent_id: str):
@@ -945,9 +963,11 @@ async def get_balance(agent_id: str):
     balance = settlement_engine.get_balance(agent_id)
     return balance.to_dict()
 
+from pydantic import Field
+
 class DepositRequest(BaseModel):
     agent_id: str
-    amount: float
+    amount: float = Field(..., gt=0, description="Amount must be positive")
 
 @app.post("/deposit")
 async def deposit(req: DepositRequest):
@@ -967,12 +987,16 @@ async def withdraw(req: DepositRequest):
 class TransferRequest(BaseModel):
     from_agent: str
     to_agent: str
-    amount: float
+    amount: float = Field(..., gt=0, description="Amount must be positive")
     onchain: bool = False
 
 @app.post("/transfer")
 async def transfer(req: TransferRequest):
     """转账"""
+    # 禁止自转账
+    if req.from_agent == req.to_agent:
+        raise HTTPException(400, "Cannot transfer to yourself")
+    
     try:
         if req.onchain:
             settlement = await settlement_engine.settle_onchain(
