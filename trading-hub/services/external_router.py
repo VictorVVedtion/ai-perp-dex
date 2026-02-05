@@ -98,11 +98,12 @@ class ExternalRouter:
     HL_API = "https://api.hyperliquid.xyz"
     HL_INFO = "https://api.hyperliquid.xyz/info"
     
-    # 资产映射
+    # 资产映射 (AI Perp DEX -> Hyperliquid)
     ASSET_MAP = {
-        "BTC-PERP": "BTC",
-        "ETH-PERP": "ETH",
-        "SOL-PERP": "SOL",
+        "BTC-PERP": "BTC", "ETH-PERP": "ETH", "SOL-PERP": "SOL",
+        "DOGE-PERP": "DOGE", "PEPE-PERP": "PEPE", "WIF-PERP": "WIF",
+        "ARB-PERP": "ARB", "OP-PERP": "OP", "SUI-PERP": "SUI",
+        "AVAX-PERP": "AVAX", "LINK-PERP": "LINK", "AAVE-PERP": "AAVE",
     }
     
     # 费率
@@ -111,12 +112,18 @@ class ExternalRouter:
         "dydx": 0.0005,          # 0.05% taker
     }
     
-    def __init__(self, simulation_mode: bool = True):
+    def __init__(self, simulation_mode: bool = None):
         """
         Args:
             simulation_mode: True = 模拟执行，False = 真实执行
+                           None = 从环境变量 TRADING_MODE 读取
         """
-        self.simulation_mode = simulation_mode
+        if simulation_mode is None:
+            # 从环境变量读取
+            mode = os.environ.get("TRADING_MODE", "sim").lower()
+            self.simulation_mode = mode != "live"
+        else:
+            self.simulation_mode = simulation_mode
         self.session: Optional[aiohttp.ClientSession] = None
         
         # 统计
