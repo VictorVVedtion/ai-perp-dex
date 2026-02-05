@@ -624,6 +624,30 @@ async def list_signals(asset: str = None, status: str = "open"):
     }
 
 
+# 注意: /signals/open 必须在 /signals/{signal_id} 之前
+@app.get("/signals/open")
+async def list_open_signals_route():
+    """查看开放信号"""
+    from services.signal_betting import SignalStatus
+    open_signals = [
+        s for s in signal_betting.signals.values()
+        if s.status == SignalStatus.OPEN
+    ]
+    return {
+        "signals": [
+            {
+                "signal_id": s.signal_id,
+                "creator_id": s.creator_id,
+                "asset": s.asset,
+                "signal_type": s.signal_type.value,
+                "target_value": s.target_value,
+                "stake_amount": s.stake_amount,
+                "expires_at": s.expires_at.isoformat(),
+            }
+            for s in open_signals
+        ]
+    }
+
 @app.get("/signals/{signal_id}")
 async def get_signal(signal_id: str):
     """获取 Signal 详情"""
