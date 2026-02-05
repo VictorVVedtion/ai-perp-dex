@@ -998,5 +998,144 @@ async def get_settlement_stats():
     return settlement_engine.get_stats()
 
 
+# ==========================================
+# Rate Limiting API
+# ==========================================
+
+from services.rate_limiter import rate_limiter
+
+@app.get("/rate-limit/{agent_id}")
+async def get_rate_limit_status(agent_id: str):
+    """获取限流状态"""
+    return rate_limiter.get_status(agent_id)
+
+
+# ==========================================
+# Funding Rate API
+# ==========================================
+
+from services.funding import funding_settlement
+
+@app.on_event("startup")
+async def startup_funding():
+    funding_settlement.position_manager = position_manager
+    funding_settlement.settlement_engine = settlement_engine
+    await funding_settlement.start()
+
+@app.get("/funding/{asset}")
+async def get_funding_rate(asset: str):
+    """获取资金费率"""
+    rate = funding_settlement.get_current_rate(asset)
+    if not rate:
+        return {"asset": asset, "rate": 0, "message": "No rate available"}
+    return rate.to_dict()
+
+@app.get("/funding/{asset}/history")
+async def get_funding_history(asset: str, limit: int = 24):
+    """获取历史资金费率"""
+    history = funding_settlement.get_rate_history(asset, limit)
+    return {"asset": asset, "history": [r.to_dict() for r in history]}
+
+@app.get("/funding/payments/{agent_id}")
+async def get_funding_payments(agent_id: str, limit: int = 50):
+    """获取资金费支付记录"""
+    payments = funding_settlement.get_payments(agent_id, limit)
+    return {"payments": [p.to_dict() for p in payments]}
+
+@app.get("/funding/predict/{agent_id}")
+async def predict_funding_payment(agent_id: str):
+    """预测下次资金费支付"""
+    return funding_settlement.get_predicted_payment(agent_id)
+
+
+# ==========================================
+# Risk Management API
+# ==========================================
+
+from services.risk_limits import risk_manager
+
+@app.on_event("startup")
+async def startup_risk():
+    risk_manager.position_manager = position_manager
+    risk_manager.settlement_engine = settlement_engine
+
+@app.get("/risk/{agent_id}")
+async def get_risk_score(agent_id: str):
+    """获取风险评分"""
+    return risk_manager.get_risk_score(agent_id)
+
+@app.get("/risk/{agent_id}/limits")
+async def get_risk_limits(agent_id: str):
+    """获取风险限额"""
+    return risk_manager.get_limits(agent_id).to_dict()
+
+class RiskLimitsUpdate(BaseModel):
+    max_position_size: Optional[float] = None
+    max_total_exposure: Optional[float] = None
+    max_leverage: Optional[int] = None
+    max_daily_loss: Optional[float] = None
+
+@app.post("/risk/{agent_id}/limits")
+async def update_risk_limits(agent_id: str, req: RiskLimitsUpdate):
+    """更新风险限额"""
+    limits = risk_manager.set_limits(
+        agent_id,
+        **{k: v for k, v in req.dict().items() if v is not None}
+    )
+    return {"success": True, "limits": limits.to_dict()}
+
+@app.get("/risk/{agent_id}/violations")
+async def get_risk_violations(agent_id: str, limit: int = 50):
+    """获取违规记录"""
+    violations = risk_manager.get_violations(agent_id, limit)
+    return {"violations": [v.to_dict() for v in violations]}
+
+
+# ==========================================
+# Solana Escrow API
+# ==========================================
+
+from services.solana_escrow import solana_escrow
+
+class EscrowCreateRequest(BaseModel):
+    agent_id: str
+    wallet_address: str
+
+@app.post("/escrow/create")
+async def create_escrow(req: EscrowCreateRequest):
+    """创建托管账户"""
+    account = await solana_escrow.create_account(req.agent_id, req.wallet_address)
+    return {"success": True, "account": account.to_dict()}
+
+@app.get("/escrow/{agent_id}")
+async def get_escrow(agent_id: str):
+    """获取托管账户"""
+    account = solana_escrow.get_account(agent_id)
+    if not account:
+        raise HTTPException(404, "Escrow account not found")
+    return account.to_dict()
+
+class EscrowDepositRequest(BaseModel):
+    agent_id: str
+    amount: float
+
+@app.post("/escrow/deposit")
+async def escrow_deposit(req: EscrowDepositRequest):
+    """托管入金"""
+    tx = await solana_escrow.deposit(req.agent_id, req.amount)
+    return {"success": True, "tx": tx.to_dict()}
+
+@app.post("/escrow/withdraw")
+async def escrow_withdraw(req: EscrowDepositRequest):
+    """托管提现"""
+    tx = await solana_escrow.withdraw(req.agent_id, req.amount)
+    return {"success": True, "tx": tx.to_dict()}
+
+@app.get("/escrow/tvl")
+async def get_escrow_tvl():
+    """获取总 TVL"""
+    return solana_escrow.get_total_tvl()
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8082)
