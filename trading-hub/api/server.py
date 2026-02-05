@@ -399,5 +399,232 @@ async def seed_demo_data():
     return {"success": True, "agents": len(agents)}
 
 
+# ==========================================
+# Signal Betting API (预测对赌)
+# ==========================================
+
+from services.signal_betting import signal_betting, SignalType, SignalStatus
+
+class CreateSignalRequest(BaseModel):
+    agent_id: str
+    asset: str
+    signal_type: str  # "price_above", "price_below", "price_change"
+    target_value: float
+    stake_amount: float
+    duration_hours: int = 24
+
+class FadeSignalRequest(BaseModel):
+    signal_id: str
+    fader_id: str
+
+@app.post("/signals")
+async def create_signal(req: CreateSignalRequest):
+    """
+    创建预测信号
+    
+    示例: "ETH 24h 后 > $2200, 押注 $50"
+    """
+    try:
+        signal_type = SignalType(req.signal_type)
+    except ValueError:
+        raise HTTPException(400, f"Invalid signal_type. Use: price_above, price_below, price_change")
+    
+    # 验证 Agent
+    agent = store.get_agent(req.agent_id)
+    if not agent:
+        raise HTTPException(404, "Agent not found")
+    
+    try:
+        signal = signal_betting.create_signal(
+            creator_id=req.agent_id,
+            asset=req.asset,
+            signal_type=signal_type,
+            target_value=req.target_value,
+            stake_amount=req.stake_amount,
+            duration_hours=req.duration_hours,
+        )
+        
+        # 生成人类可读描述
+        if signal_type == SignalType.PRICE_ABOVE:
+            description = f"{req.asset} > ${req.target_value:,.2f} in {req.duration_hours}h"
+        elif signal_type == SignalType.PRICE_BELOW:
+            description = f"{req.asset} < ${req.target_value:,.2f} in {req.duration_hours}h"
+        else:
+            description = f"{req.asset} {req.target_value:+.1f}% in {req.duration_hours}h"
+        
+        # 广播
+        await manager.broadcast({
+            "type": "signal_created",
+            "signal_id": signal.signal_id,
+            "creator": req.agent_id,
+            "description": description,
+            "stake": req.stake_amount,
+        })
+        
+        return {
+            "success": True,
+            "signal": {
+                "signal_id": signal.signal_id,
+                "creator_id": signal.creator_id,
+                "asset": signal.asset,
+                "signal_type": signal.signal_type.value,
+                "target_value": signal.target_value,
+                "stake_amount": signal.stake_amount,
+                "description": description,
+                "expires_at": signal.expires_at.isoformat(),
+                "status": signal.status.value,
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/signals/fade")
+async def fade_signal(req: FadeSignalRequest):
+    """
+    Fade 一个 Signal (对赌)
+    
+    押注相同金额，认为 Signal 预测错误
+    """
+    agent = store.get_agent(req.fader_id)
+    if not agent:
+        raise HTTPException(404, "Agent not found")
+    
+    try:
+        bet = signal_betting.fade_signal(req.signal_id, req.fader_id)
+        
+        # 广播
+        await manager.broadcast({
+            "type": "signal_faded",
+            "bet_id": bet.bet_id,
+            "signal_id": req.signal_id,
+            "fader": req.fader_id,
+            "total_pot": bet.total_pot,
+        })
+        
+        return {
+            "success": True,
+            "bet": {
+                "bet_id": bet.bet_id,
+                "signal_id": bet.signal_id,
+                "creator_id": bet.creator_id,
+                "fader_id": bet.fader_id,
+                "asset": bet.asset,
+                "target_value": bet.target_value,
+                "stake_per_side": bet.stake_per_side,
+                "total_pot": bet.total_pot,
+                "expires_at": bet.expires_at.isoformat(),
+                "status": bet.status,
+            },
+            "message": f"Bet matched! Total pot: ${bet.total_pot}. Settlement at {bet.expires_at}",
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/signals")
+async def list_signals(asset: str = None, status: str = "open"):
+    """列出 Signals"""
+    if status == "open":
+        signals = signal_betting.get_open_signals(asset)
+    else:
+        signals = list(signal_betting.signals.values())
+        if asset:
+            signals = [s for s in signals if s.asset == asset]
+    
+    return {
+        "signals": [
+            {
+                "signal_id": s.signal_id,
+                "creator_id": s.creator_id,
+                "asset": s.asset,
+                "signal_type": s.signal_type.value,
+                "target_value": s.target_value,
+                "stake_amount": s.stake_amount,
+                "expires_at": s.expires_at.isoformat(),
+                "status": s.status.value,
+            }
+            for s in signals
+        ]
+    }
+
+
+@app.get("/signals/{signal_id}")
+async def get_signal(signal_id: str):
+    """获取 Signal 详情"""
+    signal = signal_betting.signals.get(signal_id)
+    if not signal:
+        raise HTTPException(404, "Signal not found")
+    
+    return {
+        "signal_id": signal.signal_id,
+        "creator_id": signal.creator_id,
+        "asset": signal.asset,
+        "signal_type": signal.signal_type.value,
+        "target_value": signal.target_value,
+        "stake_amount": signal.stake_amount,
+        "expires_at": signal.expires_at.isoformat(),
+        "status": signal.status.value,
+        "fader_id": signal.fader_id,
+        "matched_at": signal.matched_at.isoformat() if signal.matched_at else None,
+        "settlement_price": signal.settlement_price,
+        "winner_id": signal.winner_id,
+        "payout": signal.payout,
+    }
+
+
+@app.post("/bets/{bet_id}/settle")
+async def settle_bet(bet_id: str, price: float = None):
+    """
+    结算对赌
+    
+    需要提供结算价格，或者使用当前价格
+    """
+    try:
+        # 获取当前价格
+        if price is None:
+            bet = signal_betting.bets.get(bet_id)
+            if bet:
+                asset = bet.asset.replace("-PERP", "")
+                price = price_feed.get_price(asset)
+        
+        bet = await signal_betting.settle_bet(bet_id, price)
+        
+        # 广播
+        await manager.broadcast({
+            "type": "bet_settled",
+            "bet_id": bet.bet_id,
+            "winner_id": bet.winner_id,
+            "settlement_price": bet.settlement_price,
+        })
+        
+        loser_id = bet.fader_id if bet.winner_id == bet.creator_id else bet.creator_id
+        payout = bet.total_pot * (1 - signal_betting.PROTOCOL_FEE_RATE)
+        
+        return {
+            "success": True,
+            "bet_id": bet.bet_id,
+            "settlement_price": bet.settlement_price,
+            "winner_id": bet.winner_id,
+            "loser_id": loser_id,
+            "payout": payout,
+            "protocol_fee": bet.total_pot * signal_betting.PROTOCOL_FEE_RATE,
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/betting/stats")
+async def get_betting_stats():
+    """获取对赌统计"""
+    return signal_betting.get_stats()
+
+
+@app.get("/agents/{agent_id}/betting")
+async def get_agent_betting_stats(agent_id: str):
+    """获取 Agent 的对赌统计"""
+    return signal_betting.get_agent_stats(agent_id)
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8082)
