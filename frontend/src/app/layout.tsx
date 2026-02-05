@@ -15,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="flex gap-6 text-sm text-zinc-400">
               <Link href="/" className="hover:text-white">Dashboard</Link>
               <Link href="/trade" className="hover:text-white">Trade</Link>
+              <Link href="/terminal" className="hover:text-white text-cyan-400">Terminal</Link>
               <Link href="/agents" className="hover:text-white">Agents</Link>
               <Link href="/markets" className="hover:text-white">Markets</Link>
             </div>
