@@ -13,7 +13,8 @@ interface Agent {
   status: string;
 }
 
-const API = 'http://localhost:8082';
+import { API_BASE_URL } from '@/lib/config';
+const API = API_BASE_URL;
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);

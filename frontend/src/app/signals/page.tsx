@@ -25,7 +25,8 @@ interface BettingStats {
   pending_bets: number;
 }
 
-const API = 'http://localhost:8082';
+import { API_BASE_URL } from '@/lib/config';
+const API = API_BASE_URL;
 
 export default function SignalsPage() {
   const [signals, setSignals] = useState<Signal[]>([]);

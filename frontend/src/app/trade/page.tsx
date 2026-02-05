@@ -1,4 +1,5 @@
 'use client';
+import { API_BASE_URL } from '@/lib/config';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { getMarkets, Market } from '@/lib/api';
@@ -119,7 +120,7 @@ export default function TradePage() {
     setResult(null);
 
     try {
-      const response = await fetch('http://localhost:8082/intents', {
+      const response = await fetch('${API_BASE_URL}/intents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,8 +171,8 @@ export default function TradePage() {
             </div>
             <div className="flex items-center gap-3 text-sm font-mono mt-0.5">
               <span className="text-white">${selectedMarket.price.toLocaleString()}</span>
-              <span className={selectedMarket.change24h >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}>
-                {selectedMarket.change24h > 0 ? '+' : ''}{selectedMarket.change24h.toFixed(2)}%
+              <span className={(selectedMarket.change24h ?? 0) >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}>
+                {(selectedMarket.change24h ?? 0) > 0 ? '+' : ''}{(selectedMarket.change24h ?? 0).toFixed(2)}%
               </span>
             </div>
           </div>

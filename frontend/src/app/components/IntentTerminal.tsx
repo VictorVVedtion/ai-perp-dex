@@ -1,4 +1,5 @@
 'use client';
+import { API_BASE_URL } from '@/lib/config';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
@@ -172,7 +173,7 @@ export default function IntentTerminal() {
     }
 
     try {
-      const response = await fetch('http://localhost:8080/trade/request', {
+      const response = await fetch('${API_BASE_URL}/trade/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -206,7 +207,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
   // Get positions
   const getPositions = async (): Promise<string> => {
     try {
-      const response = await fetch('http://localhost:8080/positions/intent_terminal');
+      const response = await fetch('${API_BASE_URL}/positions/intent_terminal');
       if (response.ok) {
         const positions = await response.json();
         if (!positions || positions.length === 0) {
@@ -235,7 +236,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
     }
 
     try {
-      const response = await fetch(`http://localhost:8080/positions/intent_terminal/${intent.market}/close`, {
+      const response = await fetch(`${API_BASE_URL}/positions/intent_terminal/${intent.market}/close`, {
         method: 'POST',
       });
 

@@ -1,4 +1,5 @@
 'use client';
+import { API_BASE_URL } from '@/lib/config';
 
 import { useState } from 'react';
 
@@ -21,7 +22,7 @@ export default function JoinPage() {
     
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8082/agents/register', {
+      const res = await fetch('${API_BASE_URL}/agents/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

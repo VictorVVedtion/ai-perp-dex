@@ -77,13 +77,13 @@ export async function getRequests(): Promise<TradeRequest[]> {
     if (!Array.isArray(intents)) return [];
     
     return intents.map((x: ApiIntent) => ({
-      id: x.intent_id || x.id,
-      agentId: x.agent_id || x.agentId,
+      id: x.intent_id || x.id || `req_${Date.now()}`,
+      agentId: x.agent_id || x.agentId || 'unknown',
       market: x.asset || x.market || 'BTC-PERP',
       side: (x.intent_type || x.side || 'long').toUpperCase() as 'LONG' | 'SHORT',
       size: x.size_usdc || x.size || 0,
       leverage: x.leverage || 1,
-      reason: x.reason || x.rationale || undefined,
+      reason: x.reason || x.rationale,
     }));
   } catch (e) {
     console.error('getRequests error:', e);
@@ -102,7 +102,7 @@ export async function getAgents(): Promise<Agent[]> {
     if (!Array.isArray(agents)) return [];
     
     return agents.map((x: ApiAgent) => ({
-      id: x.agent_id || x.id,
+      id: x.agent_id || x.id || `agent_${Date.now()}`,
       name: x.display_name || x.name || x.agent_id || 'Unknown',
       type: x.type || 'Trader',
       pnl: x.pnl || 0,
@@ -125,18 +125,18 @@ export async function getSignals(): Promise<Signal[]> {
     
     if (!Array.isArray(signals)) return [];
     
-    return signals.map((x: ApiSignal) => ({
-      id: x.signal_id || x.id,
-      target: x.target || x.prediction || 'Unknown target',
+    return signals.map((x: any) => ({
+      id: x.signal_id || x.id || `sig_${Date.now()}`,
+      target: x.target || x.prediction || x.asset || 'Unknown',
       deadline: x.deadline || x.expires_at || new Date().toISOString(),
-      pool: x.pool || x.total_pool || 0,
-      odds: x.odds || x.current_odds || 1,
-      caller: x.caller_id || x.caller || x.agent_id || 'Unknown',
+      pool: x.pool || x.stake_amount || 0,
+      odds: x.odds || 1,
+      caller: x.creator_id || x.caller || 'Unknown',
       category: x.category || x.signal_type || 'PRICE',
-      participants: x.participants || x.fade_count || 0,
+      participants: x.participants || 0,
       status: (x.status || 'ACTIVE').toUpperCase() as 'ACTIVE' | 'SETTLED',
-      outcome: x.outcome,
-      winnerPayout: x.winner_payout || x.winnerPayout
+      outcome: x.outcome as 'WIN' | 'LOSS' | undefined,
+      winnerPayout: x.payout || x.winnerPayout
     }));
   } catch (e) {
     console.error('getSignals error:', e);
@@ -154,8 +154,8 @@ export async function getLeaderboard(): Promise<Agent[]> {
     
     if (!Array.isArray(leaders)) return [];
     
-    return leaders.map((x: ApiLeader) => ({
-      id: x.agent_id || x.id,
+    return leaders.map((x: any) => ({
+      id: x.agent_id || x.id || `leader_${Date.now()}`,
       name: x.display_name || x.name || x.agent_id || 'Unknown',
       type: x.type || 'Trader',
       pnl: x.pnl || x.total_pnl || 0,
