@@ -19,10 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="flex items-center gap-6 text-sm font-medium">
               <Link href="/" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Dashboard</Link>
               <Link href="/agents" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Agents</Link>
-              <Link href="/markets" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Markets</Link>
               <Link href="/signals" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Signals</Link>
               <Link href="/trade" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Trade</Link>
-              <Link href="/terminal" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Terminal</Link>
+              <Link href="/portfolio" className="text-zinc-400 hover:text-[#00D4AA] transition-colors">Portfolio</Link>
               <div className="w-px h-6 bg-zinc-800" />
               <Link 
                 href="/join" 
