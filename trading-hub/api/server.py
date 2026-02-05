@@ -798,6 +798,9 @@ async def acknowledge_alert(alert_id: str):
 # ==========================================
 
 from services.backtester import backtester, strategy_momentum, strategy_grid
+from services.historical_data import enhanced_backtester, historical_data
+from services.agent_comms import agent_comm, MessageType
+from services.settlement import settlement_engine
 from datetime import datetime, timedelta
 
 class BacktestRequest(BaseModel):
@@ -805,45 +808,194 @@ class BacktestRequest(BaseModel):
     asset: str = "ETH"
     days: int = 30
     initial_capital: float = 1000
+    use_real_data: bool = True
 
 @app.post("/backtest")
 async def run_backtest(req: BacktestRequest):
-    """运行策略回测"""
-    # 选择策略
+    """运行策略回测 (支持真实数据)"""
+    
+    # 定义策略
+    async def momentum_strategy(price, position, capital, history, candle):
+        if len(history) < 20:
+            return None
+        ma20 = sum(history[-20:]) / 20
+        if not position:
+            if price > ma20 * 1.02:
+                return "long"
+            elif price < ma20 * 0.98:
+                return "short"
+        else:
+            # 盈亏 5% 平仓
+            entry = position["entry"]
+            if position["side"] == "long":
+                if price > entry * 1.05 or price < entry * 0.95:
+                    return "close"
+            else:
+                if price < entry * 0.95 or price > entry * 1.05:
+                    return "close"
+        return None
+    
+    async def grid_strategy(price, position, capital, history, candle):
+        if len(history) < 10:
+            return None
+        avg = sum(history[-10:]) / 10
+        if not position:
+            if price < avg * 0.98:
+                return "long"
+            elif price > avg * 1.02:
+                return "short"
+        else:
+            entry = position["entry"]
+            diff = abs(price - entry) / entry
+            if diff > 0.03:
+                return "close"
+        return None
+    
     if req.strategy == "momentum":
-        strategy = strategy_momentum
+        strategy = momentum_strategy
     elif req.strategy == "grid":
-        strategy = strategy_grid
+        strategy = grid_strategy
     else:
         raise HTTPException(400, f"Unknown strategy: {req.strategy}")
     
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=req.days)
-    
-    result = await backtester.run(
-        strategy=strategy,
-        asset=req.asset,
-        start_date=start_date,
-        end_date=end_date,
-        initial_capital=req.initial_capital,
+    if req.use_real_data:
+        # 使用真实数据回测
+        result = await enhanced_backtester.run(
+            strategy=strategy,
+            asset=req.asset,
+            days=req.days,
+            initial_capital=req.initial_capital,
+        )
+        result["data_source"] = "binance/coingecko"
+        return result
+    else:
+        # 使用模拟数据
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=req.days)
+        result = await backtester.run(
+            strategy=strategy_momentum if req.strategy == "momentum" else strategy_grid,
+            asset=req.asset,
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=req.initial_capital,
+        )
+        return {
+            "strategy": req.strategy,
+            "asset": req.asset,
+            "period_days": req.days,
+            "data_source": "simulated",
+            "initial_capital": result.initial_capital,
+            "final_capital": round(result.final_capital, 2),
+            "total_return": round(result.total_return, 2),
+            "total_return_pct": round(result.total_return_pct, 2),
+            "max_drawdown_pct": round(result.max_drawdown_pct, 2),
+            "win_rate": round(result.win_rate, 1),
+            "profit_factor": round(result.profit_factor, 2),
+            "total_trades": result.total_trades,
+        }
+
+
+# ==========================================
+# Agent Communication API
+# ==========================================
+
+@app.get("/agents/discover")
+async def discover_agents(specialty: str = None, min_trades: int = None):
+    """发现其他 Agent"""
+    agents = agent_comm.discover(
+        specialty=specialty,
+        min_trades=min_trades,
     )
-    
-    return {
-        "strategy": req.strategy,
-        "asset": req.asset,
-        "period_days": req.days,
-        "initial_capital": result.initial_capital,
-        "final_capital": round(result.final_capital, 2),
-        "total_return": round(result.total_return, 2),
-        "total_return_pct": round(result.total_return_pct, 2),
-        "max_drawdown_pct": round(result.max_drawdown_pct, 2),
-        "sharpe_ratio": round(result.sharpe_ratio, 2),
-        "win_rate": round(result.win_rate, 1),
-        "profit_factor": round(result.profit_factor, 2),
-        "total_trades": result.total_trades,
-        "winning_trades": result.winning_trades,
-        "losing_trades": result.losing_trades,
-    }
+    return {"agents": [a.to_dict() for a in agents]}
+
+class SignalShareRequest(BaseModel):
+    agent_id: str
+    asset: str
+    direction: str
+    confidence: float
+    reason: str = ""
+
+@app.post("/signals/share")
+async def share_signal(req: SignalShareRequest):
+    """分享交易信号"""
+    msg_id = await agent_comm.share_signal(
+        from_agent=req.agent_id,
+        signal={
+            "asset": req.asset,
+            "direction": req.direction,
+            "confidence": req.confidence,
+            "reason": req.reason,
+        }
+    )
+    return {"success": True, "message_id": msg_id}
+
+@app.get("/agents/{agent_id}/inbox")
+async def get_inbox(agent_id: str, limit: int = 50):
+    """获取收件箱"""
+    messages = agent_comm.get_inbox(agent_id, limit)
+    return {"messages": [m.to_dict() for m in messages]}
+
+# ==========================================
+# Settlement API
+# ==========================================
+
+@app.get("/balance/{agent_id}")
+async def get_balance(agent_id: str):
+    """获取余额"""
+    balance = settlement_engine.get_balance(agent_id)
+    return balance.to_dict()
+
+class DepositRequest(BaseModel):
+    agent_id: str
+    amount: float
+
+@app.post("/deposit")
+async def deposit(req: DepositRequest):
+    """入金"""
+    balance = settlement_engine.deposit(req.agent_id, req.amount)
+    return {"success": True, "balance": balance.to_dict()}
+
+@app.post("/withdraw")
+async def withdraw(req: DepositRequest):
+    """出金"""
+    success = settlement_engine.withdraw(req.agent_id, req.amount)
+    if not success:
+        raise HTTPException(400, "Insufficient balance")
+    balance = settlement_engine.get_balance(req.agent_id)
+    return {"success": True, "balance": balance.to_dict()}
+
+class TransferRequest(BaseModel):
+    from_agent: str
+    to_agent: str
+    amount: float
+    onchain: bool = False
+
+@app.post("/transfer")
+async def transfer(req: TransferRequest):
+    """转账"""
+    try:
+        if req.onchain:
+            settlement = await settlement_engine.settle_onchain(
+                req.from_agent, req.to_agent, req.amount
+            )
+        else:
+            settlement = await settlement_engine.settle_internal(
+                req.from_agent, req.to_agent, req.amount
+            )
+        return {"success": True, "settlement": settlement.to_dict()}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.get("/settlements")
+async def get_settlements(agent_id: str = None, limit: int = 50):
+    """获取结算记录"""
+    settlements = settlement_engine.get_settlements(agent_id=agent_id, limit=limit)
+    return {"settlements": [s.to_dict() for s in settlements]}
+
+@app.get("/settlement/stats")
+async def get_settlement_stats():
+    """获取结算统计"""
+    return settlement_engine.get_stats()
 
 
 if __name__ == "__main__":
