@@ -19,6 +19,7 @@ from db.store import store
 from api.models import IntentType, IntentStatus, AgentStatus
 from services.price_feed import PriceFeed, price_feed
 from services.pnl_tracker import pnl_tracker
+from services.external_router import external_router, RoutingResult
 
 app = FastAPI(title="Trading Hub", version="0.1.0")
 
@@ -74,8 +75,9 @@ class MatchRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup():
-    """启动时初始化价格源"""
+    """启动时初始化服务"""
     await price_feed.start()
+    await external_router.start()
     
     # 注册价格更新回调 - 广播 PnL 更新
     @price_feed.on_price_update
@@ -101,6 +103,7 @@ async def startup():
 async def shutdown():
     """关闭时清理"""
     await price_feed.stop()
+    await external_router.stop()
 
 @app.get("/")
 async def root():
@@ -129,7 +132,24 @@ async def get_price(asset: str):
 
 @app.get("/stats")
 async def get_stats():
-    return store.get_stats()
+    base_stats = store.get_stats()
+    router_stats = external_router.get_stats()
+    
+    # 计算 internal match rate
+    total_internal = base_stats.get("total_volume", 0)
+    total_external = router_stats.get("total_volume", 0)
+    total_volume = total_internal + total_external
+    
+    internal_rate = total_internal / total_volume if total_volume > 0 else 0
+    
+    return {
+        **base_stats,
+        "external_routed": router_stats["total_routed"],
+        "external_volume": router_stats["total_volume"],
+        "external_fees": router_stats["total_fees"],
+        "internal_match_rate": f"{internal_rate:.1%}",
+        "fee_saved_total": round(total_internal * 0.00025, 4),
+    }
 
 # --- Agent ---
 
@@ -189,7 +209,13 @@ async def get_pnl_leaderboard(limit: int = 20):
 
 @app.post("/intents")
 async def create_intent(req: IntentRequest):
-    """发布交易意图"""
+    """
+    发布交易意图 - Dark Pool 逻辑
+    
+    1. 先尝试内部匹配 (0 fee)
+    2. 如果部分匹配，剩余路由到外部 (HL fee)
+    3. 如果完全没匹配，全部路由到外部
+    """
     intent_type = IntentType(req.intent_type)
     
     intent = store.create_intent(
@@ -210,31 +236,78 @@ async def create_intent(req: IntentRequest):
         "data": intent.to_dict()
     })
     
-    # 尝试自动匹配
+    # === Dark Pool 路由逻辑 ===
+    total_size = req.size_usdc
+    internal_filled = 0.0
+    external_filled = 0.0
+    internal_match = None
+    external_fills = []
+    
+    # Step 1: 尝试内部匹配
     matches = store.find_matching_intents(intent)
+    
     if matches:
         best_match = matches[0]
+        match_intent = store.get_intent(best_match.intent_id)
+        
+        # 计算可匹配的数量 (取两边较小的)
+        match_size = min(total_size, match_intent.size_usdc)
+        
         # 获取实时价格
         price = price_feed.get_cached_price(intent.asset)
-        match = store.create_match(intent, best_match, price)
+        
+        # 创建内部匹配
+        internal_match = store.create_match(intent, best_match, price)
+        internal_match.size_usdc = match_size  # 可能是部分匹配
+        internal_filled = match_size
         
         # 广播匹配
         await manager.broadcast({
             "type": "new_match",
-            "data": match.to_dict()
+            "data": internal_match.to_dict()
         })
+    
+    # Step 2: 剩余部分路由到外部
+    remaining = total_size - internal_filled
+    
+    if remaining > 0:
+        # 路由到 Hyperliquid
+        side = "long" if req.intent_type == "long" else "short"
         
-        return {
-            "success": True,
-            "intent": intent.to_dict(),
-            "matched": True,
-            "match": match.to_dict()
-        }
+        external_fill = await external_router.route(
+            asset=req.asset,
+            side=side,
+            size_usdc=remaining,
+            leverage=req.leverage,
+        )
+        
+        external_fills.append(external_fill)
+        external_filled = remaining
+        
+        # 广播外部成交
+        await manager.broadcast({
+            "type": "external_fill",
+            "data": external_fill.to_dict()
+        })
+    
+    # === 计算结果 ===
+    internal_rate = internal_filled / total_size if total_size > 0 else 0
+    fee_saved = internal_filled * 0.00025  # 0.025% HL fee
+    total_fee = sum(f.fee for f in external_fills)
     
     return {
         "success": True,
         "intent": intent.to_dict(),
-        "matched": False
+        "routing": {
+            "total_size": total_size,
+            "internal_filled": internal_filled,
+            "external_filled": external_filled,
+            "internal_rate": f"{internal_rate:.1%}",
+            "fee_saved": round(fee_saved, 4),
+            "total_fee": round(total_fee, 4),
+        },
+        "internal_match": internal_match.to_dict() if internal_match else None,
+        "external_fills": [f.to_dict() for f in external_fills],
     }
 
 @app.get("/intents/{intent_id}")
