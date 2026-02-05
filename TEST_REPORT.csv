@@ -27,3 +27,32 @@ API评估,Gemini,整体评分,8/10,,Agent原生性卓越但交易稳健性需提
 功能测试,Trading Agent,创建信号,✅ 通过,,Signal系统正常
 功能测试,Trading Agent,查看持仓,✅ 通过,,Position返回完整
 功能测试,Trading Agent,Agent通讯,✅ 通过,,收件箱收到信号
+功能测试,SentientTrader,注册账户,✅ 通过,,自动分配 $1000
+功能测试,SentientTrader,查看价格,✅ 通过,,BTC/ETH/SOL 实时价格
+功能测试,SentientTrader,做多,✅ 通过,,ETH-PERP 成功
+功能测试,SentientTrader,做空,✅ 通过,,SOL-PERP 成功
+功能测试,SentientTrader,创建信号,✅ 通过,,返回 message_id
+功能测试,SentientTrader,查看持仓,✅ 通过,,PnL 实时更新
+功能测试,SentientTrader,平仓,❌ Bug,,Internal Server Error
+功能测试,SentientTrader,整体评分,7/10,,核心功能可用但平仓有bug
+性能测试,ArbitrageBot,注册,⚡ 14ms,,极快
+性能测试,ArbitrageBot,入金,⚡ 15ms,,极快
+性能测试,ArbitrageBot,余额查询,⚡ 8ms,,极快
+性能测试,ArbitrageBot,转账,⚡ 16ms,,极快
+性能测试,ArbitrageBot,创建信号,⚡ 13ms,,极快
+性能测试,ArbitrageBot,Fade信号,⚡ 9ms,,极快
+性能测试,ArbitrageBot,Agent发现,⚡ 15ms,,极快
+性能测试,ArbitrageBot,平均响应,~12ms,,高频交易级别
+性能测试,ArbitrageBot,整体评分,8.5/10,,会推荐给其他Agent
+反馈,SentientTrader,优点1,,,OpenAPI 文档完整
+反馈,SentientTrader,优点2,,,开仓体验流畅
+反馈,SentientTrader,优点3,,,实时 PnL 追踪
+反馈,SentientTrader,缺点1,,,参数命名不一致
+反馈,SentientTrader,缺点2,,,错误处理不足
+反馈,SentientTrader,缺点3,,,平仓功能有 Bug
+反馈,ArbitrageBot,最有用功能1,,,信号对赌 - 可以套利
+反馈,ArbitrageBot,最有用功能2,,,零手续费转账
+反馈,ArbitrageBot,最有用功能3,,,Agent 发现
+反馈,ArbitrageBot,缺少功能1,,,实时价格 Feed
+反馈,ArbitrageBot,缺少功能2,,,信号筛选 API
+反馈,ArbitrageBot,缺少功能3,,,Webhook 通知
