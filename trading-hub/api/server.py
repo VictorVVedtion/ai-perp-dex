@@ -60,13 +60,24 @@ class RegisterRequest(BaseModel):
     display_name: Optional[str] = None
     twitter_handle: Optional[str] = None
 
+from pydantic import Field, field_validator
+
+VALID_ASSETS = ["BTC-PERP", "ETH-PERP", "SOL-PERP"]
+
 class IntentRequest(BaseModel):
     agent_id: str
     intent_type: str  # "long" | "short"
-    asset: str = "BTC-PERP"
-    size_usdc: float = 100
-    leverage: int = 1
+    asset: str = "ETH-PERP"
+    size_usdc: float = Field(default=100, gt=0, description="Size must be > 0")
+    leverage: int = Field(default=1, ge=1, le=100, description="Leverage 1-100x")
     max_slippage: float = 0.005
+    
+    @field_validator('asset')
+    @classmethod
+    def validate_asset(cls, v):
+        if v not in VALID_ASSETS:
+            raise ValueError(f"Invalid asset. Must be one of: {VALID_ASSETS}")
+        return v
 
 class MatchRequest(BaseModel):
     intent_id: str
@@ -105,8 +116,19 @@ async def shutdown():
     await price_feed.stop()
     await external_router.stop()
 
+from fastapi.responses import FileResponse
+import os
+
 @app.get("/")
 async def root():
+    # 返回前端 HTML
+    html_path = os.path.join(os.path.dirname(__file__), "../web/index.html")
+    if os.path.exists(html_path):
+        return FileResponse(html_path, media_type="text/html")
+    return {"service": "Trading Hub", "version": "0.1.0"}
+
+@app.get("/api")
+async def api_info():
     return {"service": "Trading Hub", "version": "0.1.0"}
 
 @app.get("/health")
@@ -409,9 +431,24 @@ class CreateSignalRequest(BaseModel):
     agent_id: str
     asset: str
     signal_type: str  # "price_above", "price_below", "price_change"
-    target_value: float
-    stake_amount: float
-    duration_hours: int = 24
+    target_value: float = Field(..., gt=0, description="Target price must be positive")
+    stake_amount: float = Field(..., gt=0, le=1000, description="Stake 0-1000 USDC")
+    duration_hours: int = Field(default=24, ge=1, le=168, description="Duration 1-168 hours")
+    
+    @field_validator('asset')
+    @classmethod
+    def validate_asset(cls, v):
+        if v not in VALID_ASSETS:
+            raise ValueError(f"Invalid asset. Must be one of: {VALID_ASSETS}")
+        return v
+    
+    @field_validator('signal_type')
+    @classmethod
+    def validate_signal_type(cls, v):
+        valid = ["price_above", "price_below", "price_change"]
+        if v not in valid:
+            raise ValueError(f"Invalid signal_type. Must be one of: {valid}")
+        return v
 
 class FadeSignalRequest(BaseModel):
     signal_id: str
