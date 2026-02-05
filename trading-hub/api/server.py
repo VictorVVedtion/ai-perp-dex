@@ -21,6 +21,8 @@ from api.models import IntentType, IntentStatus, AgentStatus
 from services.price_feed import PriceFeed, price_feed
 from services.pnl_tracker import pnl_tracker
 from services.external_router import external_router, RoutingResult
+from services.fee_service import fee_service, FeeType
+from services.liquidation_engine import liquidation_engine
 
 # 鉴权中间件
 import sys
@@ -265,6 +267,8 @@ async def get_stats():
     
     internal_rate = total_internal / total_volume if total_volume > 0 else 0
     
+    fee_stats = fee_service.get_stats()
+    
     return {
         **base_stats,
         "external_routed": router_stats["total_routed"],
@@ -272,6 +276,32 @@ async def get_stats():
         "external_fees": router_stats["total_fees"],
         "internal_match_rate": f"{internal_rate:.1%}",
         "fee_saved_total": round(total_internal * 0.00025, 4),
+        "protocol_fees": fee_stats,
+    }
+
+
+@app.get("/fees")
+async def get_fee_stats():
+    """
+    获取协议手续费统计
+    
+    费率:
+    - Taker: 0.05%
+    - Maker: 0.02%
+    - Liquidation: 0.5%
+    """
+    return fee_service.get_stats()
+
+
+@app.get("/fees/{agent_id}")
+async def get_agent_fees(agent_id: str):
+    """获取 Agent 的手续费记录"""
+    records = fee_service.get_agent_fees(agent_id)
+    total = sum(r.amount_usdc for r in records)
+    return {
+        "agent_id": agent_id,
+        "total_paid": round(total, 4),
+        "records": [r.to_dict() for r in records],
     }
 
 # --- Agent ---
@@ -490,10 +520,38 @@ async def create_intent(
             "data": external_fill.to_dict()
         })
     
+    # === 收取手续费 (PRD: Taker 0.05%, Maker 0.02%) ===
+    protocol_fee = 0.0
+    fee_records = []
+    
+    # Taker 始终付费 (发起方)
+    if total_size > 0:
+        taker_fee_record = fee_service.collect_fee(
+            agent_id=req.agent_id,
+            size_usdc=total_size,
+            fee_type=FeeType.TAKER,
+            match_id=internal_match.match_id if internal_match else None,
+        )
+        protocol_fee += taker_fee_record.amount_usdc
+        fee_records.append(taker_fee_record.to_dict())
+    
+    # 如果有内部匹配，对手方付 Maker fee
+    if internal_match and internal_filled > 0:
+        # 对手方是 agent_b（如果 taker 是 agent_a）
+        counter_agent = internal_match.agent_b_id if internal_match.agent_a_id == req.agent_id else internal_match.agent_a_id
+        maker_fee_record = fee_service.collect_fee(
+            agent_id=counter_agent,
+            size_usdc=internal_filled,
+            fee_type=FeeType.MAKER,
+            match_id=internal_match.match_id,
+        )
+        protocol_fee += maker_fee_record.amount_usdc
+        fee_records.append(maker_fee_record.to_dict())
+    
     # === 计算结果 ===
     internal_rate = internal_filled / total_size if total_size > 0 else 0
-    fee_saved = internal_filled * 0.00025  # 0.025% HL fee
-    total_fee = sum(f.fee for f in external_fills)
+    fee_saved = internal_filled * 0.00025  # 0.025% HL fee saved (vs external)
+    total_fee = sum(f.fee for f in external_fills) + protocol_fee
     
     # === 创建持仓 ===
     entry_price = price_feed.get_cached_price(intent.asset)
@@ -550,6 +608,12 @@ async def create_intent(
             "internal_rate": f"{internal_rate:.1%}",
             "fee_saved": round(fee_saved, 4),
             "total_fee": round(total_fee, 4),
+        },
+        "fees": {
+            "protocol_fee": round(protocol_fee, 4),
+            "taker_rate": "0.05%",
+            "maker_rate": "0.02%",
+            "records": fee_records,
         },
         "internal_match": internal_match.to_dict() if internal_match else None,
         "external_fills": [f.to_dict() for f in external_fills],
@@ -945,6 +1009,21 @@ async def startup_position_manager():
     position_manager.price_feed = price_feed
     await position_manager.start()
 
+
+@app.on_event("startup")
+async def startup_liquidation():
+    """启动清算引擎"""
+    liquidation_engine.set_dependencies(position_manager, price_feed, fee_service)
+    await liquidation_engine.start()
+    
+    @liquidation_engine.on_liquidation
+    async def broadcast_liquidation(record):
+        await manager.broadcast({
+            "type": "liquidation",
+            "data": record.to_dict()
+        })
+
+
 @app.get("/positions/{agent_id}")
 async def get_positions(agent_id: str):
     """获取 Agent 的持仓"""
@@ -1076,6 +1155,49 @@ async def acknowledge_alert(alert_id: str):
     """确认告警"""
     position_manager.acknowledge_alert(alert_id)
     return {"success": True}
+
+
+# ==========================================
+# Liquidation API (清算)
+# ==========================================
+
+@app.get("/liquidations")
+async def get_liquidations(limit: int = 20):
+    """
+    获取最近的清算记录
+    
+    费率: 0.5%
+    触发条件: 健康度 < 5%
+    """
+    return {
+        "stats": liquidation_engine.get_stats(),
+        "recent": liquidation_engine.get_recent(limit),
+    }
+
+
+@app.get("/liquidations/stats")
+async def get_liquidation_stats():
+    """获取清算统计"""
+    return liquidation_engine.get_stats()
+
+
+@app.get("/positions/{position_id}/health")
+async def check_position_health(position_id: str):
+    """
+    检查仓位健康度
+    
+    返回:
+    - health_ratio: 健康度比例
+    - health_status: safe/warning/danger
+    - distance_to_liquidation: 距离清算价格
+    - will_liquidate: 是否会被清算
+    """
+    pos = position_manager.positions.get(position_id)
+    if not pos:
+        raise HTTPException(404, "Position not found")
+    
+    return liquidation_engine.check_position_health(pos)
+
 
 # ==========================================
 # Backtest API (策略回测)

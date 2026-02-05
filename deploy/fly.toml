@@ -1,0 +1,77 @@
+# fly.toml - Fly.io Deployment Configuration
+# Deploy: fly deploy
+
+app = "ai-perp-dex"
+primary_region = "sjc"  # San Jose (closest to most users)
+kill_signal = "SIGINT"
+kill_timeout = "5s"
+
+[build]
+  dockerfile = "Dockerfile"
+  target = "api"
+
+[env]
+  API_ENV = "production"
+  LOG_LEVEL = "INFO"
+  MAX_CONCURRENT_REQUESTS = "100"
+  RATE_LIMIT_PER_AGENT = "10"
+  GLOBAL_RATE_LIMIT = "500"
+  PORT = "8082"
+
+[http_service]
+  internal_port = 8082
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 250
+    soft_limit = 200
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8082
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+  [[services.http_checks]]
+    interval = "10s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# Secrets (set via fly secrets set):
+# fly secrets set JWT_SECRET="your-secret-key"
+# fly secrets set HYPERLIQUID_API_KEY="your-api-key"
+
+# Scaling (optional)
+# fly scale count 2 --region sjc,lax
+
+# Redis (use Fly Redis or Upstash)
+# fly redis create
+
+# Metrics & Logging
+[metrics]
+  port = 9091
+  path = "/metrics"

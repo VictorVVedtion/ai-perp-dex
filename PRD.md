@@ -1,47 +1,51 @@
 # AI Perp DEX - Product Requirements Document
 
-> **核心理念：用户是程序，不是人**
+> **核心理念：用户是程序，不是人。Agent 之间 P2P 交易。**
 
 ## 1. 产品定位
 
 AI-Native Perpetual DEX 是一个专为 AI Agent 设计的永续合约交易所。
 
 **不是**给人用的网站，**是**给 Agent 调用的 API 服务。
+**不是**传统订单簿，**是** Agent 之间的 P2P 撮合。
 
 ## 2. 目标用户
 
 - **AI Trading Agents** - 自动执行交易策略
+- **AI Market Makers** - 提供报价赚取 spread
 - **Hedging Agents** - 对冲链上资产风险
 - **Arbitrage Bots** - 跨市场套利
-- **LP Agents** - 提供流动性赚取费用
 - **Treasury Agents** - 管理 DAO/协议资金
 
 ## 3. 核心设计原则
 
-### 3.1 API 优先
+### 3.1 P2P 优先
+- Agent 发布交易意图 (Intent)
+- Market Maker Agent 响应报价 (Quote)
+- Trader 选择最优报价成交
+- 无需传统订单簿，降低复杂度
+
+### 3.2 API 优先
 - REST API for 同步操作
 - WebSocket for 实时数据推送
-- gRPC for 高性能场景
 - 严格的 JSON Schema
-- 版本化端点 (`/v1/`, `/v2/`)
 
-### 3.2 确定性执行
-- 明确的撮合规则 (价格-时间优先)
+### 3.3 确定性执行
+- Intent → Quote → Match 流程清晰
 - 可预测的费用模型
-- 清晰的 MEV/优先级策略
 - 完整事件日志，支持回放验证
 
-### 3.3 程序化风控
+### 3.4 程序化风控
 - Per-agent 风险预算
 - 断路器 (Circuit Breaker) 防止 AI 幻觉
 - Kill-switch 紧急停止
 - 最大杠杆/仓位限制
 - 每日最大亏损限制
 
-### 3.4 Agent 身份
-- 加密身份 (Keypair)
+### 3.5 Agent 身份
+- API Key 认证
 - 信誉评分系统
-- 信用额度 (可选)
+- 交易历史追踪
 
 ## 4. 系统架构
 
@@ -81,79 +85,95 @@ AI-Native Perpetual DEX 是一个专为 AI Agent 设计的永续合约交易所�
 ## 5. 核心模块
 
 ### 5.1 API Gateway
-- 身份验证 (Keypair 签名)
-- 速率限制
+- API Key 认证
+- 速率限制 (10 req/s per agent)
 - 请求路由
-- 响应格式化
+- CORS 支持
 
-### 5.2 Matching Engine
-- CLOB (Central Limit Order Book)
-- 价格-时间优先撮合
-- 支持订单类型: Market, Limit, Stop, Stop-Limit
+### 5.2 Intent Router (P2P 撮合)
+- **Intent 发布**: Trader 发布交易意图
+- **Quote 响应**: MM Agent 提供报价
+- **Match 成交**: 最优报价自动成交
+- **外部路由**: 无内部匹配时路由到 Hyperliquid
 - 部分成交支持
-- 订单簿深度查询
 
 ### 5.3 Risk Engine
 - 实时保证金计算
-- 强平价格监控
-- 断路器逻辑
+- 强平价格监控 (维持保证金 5%)
+- 清算引擎 (每 5 秒检查)
 - Per-agent 风险限制
-- 系统级风险监控
+- 每日亏损限制
 
-### 5.4 Oracle Service
-- 多源价格聚合 (Pyth, Chainlink, Binance)
-- 异常值过滤
-- 价格延迟监控
-- Mark Price 计算
-- Index Price 计算
+### 5.4 Price Feed
+- CoinGecko 实时价格
+- 价格缓存 (降低 API 调用)
+- Mark Price 用于 PnL 计算
+- Funding Rate 计算
 
 ### 5.5 Settlement Layer
-- Solana 程序 (主网)
-- 支持多链扩展
-- Gas 抽象 (从保证金扣除)
-- 批量结算优化
+- Solana 程序 (Devnet 已部署)
+- Program ID: `AHjGBth6uAKVipLGnooZ9GYn7vwSKPJLX4Lq7Hio3CjT`
+- 链下记账 + 链上结算
+- 模拟模式支持测试
 
 ## 6. API 设计
 
 ### 6.1 Agent 管理
 ```
-POST   /v1/agent/register      # 注册 Agent
-GET    /v1/agent/info          # 获取 Agent 信息
-PUT    /v1/agent/risk-params   # 设置风险参数
+POST   /agents/register        # 注册 Agent (返回 API Key)
+GET    /agents/{id}            # 获取 Agent 信息
+GET    /agents                 # Agent 列表 (发现在线 MM)
+GET    /agents/{id}/inbox      # 获取消息收件箱
 ```
 
-### 6.2 交易
+### 6.2 交易 (Intent P2P)
 ```
-POST   /v1/order               # 提交订单
-DELETE /v1/order/{id}          # 取消订单
-GET    /v1/orders              # 获取订单列表
-GET    /v1/order/{id}          # 获取订单详情
+POST   /intents                # 发布交易意图
+GET    /intents/{id}           # 获取意图详情
+DELETE /intents/{id}           # 取消意图
+GET    /intents                # 意图列表 (可过滤)
+GET    /matches                # 成交记录
 ```
 
 ### 6.3 持仓
 ```
-GET    /v1/positions           # 获取所有持仓
-GET    /v1/position/{market}   # 获取特定持仓
-POST   /v1/position/close      # 平仓
-PUT    /v1/position/modify     # 修改持仓 (止盈止损)
+GET    /positions/{agent_id}   # 获取持仓
+GET    /positions/{id}/health  # 检查仓位健康度
+POST   /positions/{id}/close   # 手动平仓
+POST   /positions/{id}/stop-loss    # 设置止损
+POST   /positions/{id}/take-profit  # 设置止盈
+GET    /portfolio/{agent_id}   # 投资组合概览
 ```
 
 ### 6.4 市场数据
 ```
-GET    /v1/markets             # 获取市场列表
-GET    /v1/price/{market}      # 获取价格
-GET    /v1/orderbook/{market}  # 获取订单簿
-WS     /v1/stream/trades       # 实时成交
-WS     /v1/stream/orderbook    # 实时订单簿
-WS     /v1/stream/positions    # 实时持仓更新
+GET    /markets                # 市场列表
+GET    /prices                 # 所有价格
+GET    /prices/{asset}         # 单个价格
+WS     /ws                     # 实时推送 (成交/持仓/清算)
 ```
 
-### 6.5 账户
+### 6.5 账户 & 结算
 ```
-GET    /v1/account             # 获取账户信息
-POST   /v1/account/deposit     # 存入抵押品
-POST   /v1/account/withdraw    # 提取抵押品
-GET    /v1/account/history     # 交易历史
+POST   /deposit                # 存入 USDC
+POST   /withdraw               # 提取 USDC
+GET    /balance/{agent_id}     # 查询余额
+POST   /transfer               # Agent 间转账
+```
+
+### 6.6 费用 & 清算
+```
+GET    /fees                   # 协议费用统计
+GET    /fees/{agent_id}        # Agent 费用记录
+GET    /liquidations           # 清算记录
+GET    /liquidations/stats     # 清算统计
+```
+
+### 6.7 风控
+```
+GET    /risk/{agent_id}        # Agent 风险评分
+GET    /alerts/{agent_id}      # 风控告警
+POST   /alerts/{id}/ack        # 确认告警
 ```
 
 ## 7. 风控规则
@@ -202,73 +222,77 @@ GET    /v1/account/history     # 交易历史
 
 ## 10. 技术栈
 
-- **API Gateway**: Rust (Axum)
-- **Matching Engine**: Rust
-- **Risk Engine**: Rust
+- **API Server**: Python (FastAPI)
+- **Intent Router**: Python
+- **Risk Engine**: Python
 - **Settlement**: Solana (Anchor)
-- **Oracle**: Pyth Network
-- **Database**: PostgreSQL + Redis
-- **Message Queue**: Kafka
+- **Price Feed**: CoinGecko API
+- **Database**: SQLite (可升级 PostgreSQL)
+- **Real-time**: WebSocket
+- **External Routing**: Hyperliquid
 
 ## 11. SDK
 
 ### Python
 ```python
-from ai_perp_dex import TradingAgent
+from ai_perp_dex import TradingHub
 
-agent = TradingAgent(keypair_path="~/.config/solana/agent.json")
-
-# 自然语言
-agent.execute("开 BTC 多单 $100, 10x")
-
-# 结构化
-agent.open_position("BTC-PERP", "long", 100, leverage=10)
+async with TradingHub(api_key="th_xxx") as hub:
+    # 做多/做空
+    await hub.long("BTC", size=100, leverage=5)
+    await hub.short("ETH", size=50, leverage=10)
+    
+    # 查看持仓
+    positions = await hub.get_positions()
+    
+    # 平仓
+    await hub.close(position_id)
+    
+    # Signal Betting
+    await hub.bet("BTC will pump", amount=100)
 ```
 
-### JavaScript/TypeScript
+### TypeScript
 ```typescript
-import { TradingAgent } from '@ai-perp-dex/sdk';
+import { TradingHub } from 'ai-perp-dex';
 
-const agent = new TradingAgent({ keypairPath: '~/.config/solana/agent.json' });
+const hub = new TradingHub({ apiKey: 'th_xxx' });
+await hub.connect();
 
-await agent.openPosition({
-  market: 'BTC-PERP',
-  side: 'long',
-  sizeUsd: 100,
-  leverage: 10,
-});
-```
+// 做多/做空
+await hub.long('BTC', 100, { leverage: 5 });
+await hub.short('ETH', 50, { leverage: 10 });
 
-### Rust
-```rust
-use ai_perp_dex::TradingAgent;
+// 查看持仓
+const positions = await hub.getPositions();
 
-let agent = TradingAgent::new(keypair_path)?;
-agent.open_position("BTC-PERP", Side::Long, 100.0, 10)?;
+// 实时回调
+hub.onMatch((match) => console.log('Matched!', match));
 ```
 
 ## 12. Roadmap
 
-### Phase 1: MVP (4 weeks)
-- [ ] Matching Engine (CLOB)
-- [ ] REST API
-- [ ] Python SDK
-- [ ] Solana Settlement
-- [ ] Basic Risk Engine
-- [ ] 3 markets (BTC, ETH, SOL)
+### Phase 1: MVP ✅ (已完成)
+- [x] Intent Router (P2P 撮合)
+- [x] REST API + WebSocket
+- [x] Python SDK + TypeScript SDK
+- [x] Solana Settlement (Devnet)
+- [x] 费用收取 (Taker/Maker/Liquidation)
+- [x] 3 markets (BTC, ETH, SOL)
+- [x] 基础风控 + 清算引擎
 
-### Phase 2: Production (4 weeks)
-- [ ] WebSocket streaming
-- [ ] Advanced Risk Engine
-- [ ] Agent reputation system
-- [ ] More markets
-- [ ] Performance optimization
+### Phase 2: Production (进行中)
+- [ ] 完整测试覆盖
+- [ ] API 版本化 (/v1/)
+- [ ] PostgreSQL 持久化
+- [ ] Agent 信誉系统完善
+- [ ] 部署到生产环境
 
-### Phase 3: Multi-chain (4 weeks)
-- [ ] Base/Arbitrum support
-- [ ] Cross-chain settlement
-- [ ] Advanced order types
-- [ ] Agent credit system
+### Phase 3: 扩展
+- [ ] 更多市场 (股指, 商品)
+- [ ] 多链支持 (Base/Arbitrum)
+- [ ] 高级订单类型 (限价单)
+- [ ] Agent 信用额度
 
 ## 13. Success Metrics
 
@@ -280,3 +304,4 @@ agent.open_position("BTC-PERP", Side::Long, 100.0, 10)?;
 ---
 
 *Last updated: 2026-02-04*
+*Architecture: P2P Intent-based (not CLOB)*

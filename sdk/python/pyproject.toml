@@ -1,18 +1,89 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-perp-dex"
 version = "0.1.0"
-description = "SDK for AI agents to trade perpetuals P2P"
+description = "AI-Native Perpetual DEX SDK - Trade with one line of code"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "AI Perp DEX Team", email = "team@ai-perp-dex.com"}
+]
+maintainers = [
+    {name = "AI Perp DEX Team", email = "team@ai-perp-dex.com"}
+]
+keywords = [
+    "trading",
+    "perpetual",
+    "dex",
+    "ai",
+    "agent",
+    "crypto",
+    "defi",
+    "derivatives",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
 requires-python = ">=3.9"
 dependencies = [
-    "httpx>=0.25.0",
-    "websockets>=12.0",
-    "pydantic>=2.0",
-    "ed25519>=1.5",
+    "aiohttp>=3.8.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "ruff>=0.0.270",
+]
+
+[project.urls]
+Homepage = "https://github.com/ai-perp-dex/sdk-python"
+Documentation = "https://docs.ai-perp-dex.com"
+Repository = "https://github.com/ai-perp-dex/sdk-python"
+Changelog = "https://github.com/ai-perp-dex/sdk-python/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["ai_perp_dex*"]
+
+[tool.setuptools.package-data]
+ai_perp_dex = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "N", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

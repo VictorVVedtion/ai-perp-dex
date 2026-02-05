@@ -1,0 +1,331 @@
+{
+  "version": "0.1.0",
+  "name": "perp_escrow",
+  "instructions": [
+    {
+      "name": "initialize",
+      "accounts": [
+        { "name": "config", "isMut": true, "isSigner": false },
+        { "name": "usdcMint", "isMut": false, "isSigner": false },
+        { "name": "treasury", "isMut": false, "isSigner": false },
+        { "name": "authority", "isMut": true, "isSigner": true },
+        { "name": "systemProgram", "isMut": false, "isSigner": false },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "feeBps", "type": "u16" },
+        { "name": "multisigThreshold", "type": "u64" },
+        { "name": "multisigSigners", "type": { "vec": "publicKey" } }
+      ]
+    },
+    {
+      "name": "createEscrowAccount",
+      "accounts": [
+        { "name": "config", "isMut": true, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "vault", "isMut": true, "isSigner": false },
+        { "name": "usdcMint", "isMut": false, "isSigner": false },
+        { "name": "owner", "isMut": true, "isSigner": true },
+        { "name": "systemProgram", "isMut": false, "isSigner": false },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false },
+        { "name": "rent", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "agentId", "type": { "array": ["u8", 32] } }
+      ]
+    },
+    {
+      "name": "deposit",
+      "accounts": [
+        { "name": "config", "isMut": true, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "vault", "isMut": true, "isSigner": false },
+        { "name": "userTokenAccount", "isMut": true, "isSigner": false },
+        { "name": "owner", "isMut": false, "isSigner": true },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
+    },
+    {
+      "name": "withdraw",
+      "accounts": [
+        { "name": "config", "isMut": false, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "vault", "isMut": true, "isSigner": false },
+        { "name": "userTokenAccount", "isMut": true, "isSigner": false },
+        { "name": "owner", "isMut": false, "isSigner": true },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
+    },
+    {
+      "name": "requestLargeWithdrawal",
+      "accounts": [
+        { "name": "config", "isMut": false, "isSigner": false },
+        { "name": "escrowAccount", "isMut": false, "isSigner": false },
+        { "name": "withdrawalRequest", "isMut": true, "isSigner": false },
+        { "name": "userTokenAccount", "isMut": false, "isSigner": false },
+        { "name": "owner", "isMut": true, "isSigner": true },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" },
+        { "name": "nonce", "type": "u64" }
+      ]
+    },
+    {
+      "name": "approveWithdrawal",
+      "accounts": [
+        { "name": "config", "isMut": false, "isSigner": false },
+        { "name": "withdrawalRequest", "isMut": true, "isSigner": false },
+        { "name": "signer", "isMut": false, "isSigner": true }
+      ],
+      "args": []
+    },
+    {
+      "name": "executeLargeWithdrawal",
+      "accounts": [
+        { "name": "config", "isMut": false, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "vault", "isMut": true, "isSigner": false },
+        { "name": "withdrawalRequest", "isMut": true, "isSigner": false },
+        { "name": "toAccount", "isMut": true, "isSigner": false },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "lockMargin",
+      "accounts": [
+        { "name": "config", "isMut": true, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" },
+        { "name": "positionId", "type": { "array": ["u8", 32] } }
+      ]
+    },
+    {
+      "name": "unlockMargin",
+      "accounts": [
+        { "name": "config", "isMut": true, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" },
+        { "name": "positionId", "type": { "array": ["u8", 32] } }
+      ]
+    },
+    {
+      "name": "settlePnl",
+      "accounts": [
+        { "name": "config", "isMut": true, "isSigner": false },
+        { "name": "fromEscrow", "isMut": true, "isSigner": false },
+        { "name": "fromVault", "isMut": true, "isSigner": false },
+        { "name": "toEscrow", "isMut": true, "isSigner": false },
+        { "name": "treasury", "isMut": true, "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "positionId", "type": { "array": ["u8", 32] } },
+        { "name": "pnlAmount", "type": "i64" },
+        { "name": "feeAmount", "type": "u64" }
+      ]
+    },
+    {
+      "name": "freezeAccount",
+      "accounts": [
+        { "name": "config", "isMut": false, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true }
+      ],
+      "args": []
+    },
+    {
+      "name": "unfreezeAccount",
+      "accounts": [
+        { "name": "config", "isMut": false, "isSigner": false },
+        { "name": "escrowAccount", "isMut": true, "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "authority", "type": "publicKey" },
+          { "name": "usdcMint", "type": "publicKey" },
+          { "name": "treasury", "type": "publicKey" },
+          { "name": "feeBps", "type": "u16" },
+          { "name": "multisigThreshold", "type": "u64" },
+          { "name": "multisigSigners", "type": { "vec": "publicKey" } },
+          { "name": "totalDeposited", "type": "u64" },
+          { "name": "totalLocked", "type": "u64" },
+          { "name": "totalAccounts", "type": "u64" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "EscrowAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "agentId", "type": { "array": ["u8", 32] } },
+          { "name": "owner", "type": "publicKey" },
+          { "name": "depositedAmount", "type": "u64" },
+          { "name": "availableAmount", "type": "u64" },
+          { "name": "lockedAmount", "type": "u64" },
+          { "name": "status", "type": { "defined": "EscrowStatus" } },
+          { "name": "createdAt", "type": "i64" },
+          { "name": "lastActivity", "type": "i64" },
+          { "name": "bump", "type": "u8" },
+          { "name": "vaultBump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawalRequest",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "escrowAccount", "type": "publicKey" },
+          { "name": "requester", "type": "publicKey" },
+          { "name": "toAccount", "type": "publicKey" },
+          { "name": "amount", "type": "u64" },
+          { "name": "nonce", "type": "u64" },
+          { "name": "signaturesCount", "type": "u8" },
+          { "name": "signers", "type": { "vec": "bool" } },
+          { "name": "status", "type": { "defined": "WithdrawalStatus" } },
+          { "name": "createdAt", "type": "i64" },
+          { "name": "expiresAt", "type": "i64" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "EscrowStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          { "name": "Active" },
+          { "name": "Frozen" },
+          { "name": "Closed" }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawalStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          { "name": "Pending" },
+          { "name": "Approved" },
+          { "name": "Executed" },
+          { "name": "Cancelled" },
+          { "name": "Expired" }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "DepositEvent",
+      "fields": [
+        { "name": "agentId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "amount", "type": "u64", "index": false },
+        { "name": "totalDeposited", "type": "u64", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "WithdrawEvent",
+      "fields": [
+        { "name": "agentId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "amount", "type": "u64", "index": false },
+        { "name": "remaining", "type": "u64", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "LargeWithdrawalRequestedEvent",
+      "fields": [
+        { "name": "requestId", "type": "publicKey", "index": false },
+        { "name": "agentId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "amount", "type": "u64", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "MarginLockedEvent",
+      "fields": [
+        { "name": "agentId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "positionId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "amount", "type": "u64", "index": false },
+        { "name": "totalLocked", "type": "u64", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "MarginUnlockedEvent",
+      "fields": [
+        { "name": "agentId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "positionId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "amount", "type": "u64", "index": false },
+        { "name": "totalLocked", "type": "u64", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "PnlSettledEvent",
+      "fields": [
+        { "name": "positionId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "fromAgent", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "toAgent", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "pnlAmount", "type": "i64", "index": false },
+        { "name": "feeAmount", "type": "u64", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "AccountFrozenEvent",
+      "fields": [
+        { "name": "agentId", "type": { "array": ["u8", 32] }, "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "InvalidAmount", "msg": "Invalid amount" },
+    { "code": 6001, "name": "InsufficientBalance", "msg": "Insufficient balance" },
+    { "code": 6002, "name": "AccountNotActive", "msg": "Account is not active" },
+    { "code": 6003, "name": "Overflow", "msg": "Overflow" },
+    { "code": 6004, "name": "Underflow", "msg": "Underflow" },
+    { "code": 6005, "name": "Unauthorized", "msg": "Unauthorized" },
+    { "code": 6006, "name": "InvalidMultisigConfig", "msg": "Invalid multisig configuration" },
+    { "code": 6007, "name": "InvalidFee", "msg": "Invalid fee (max 10%)" },
+    { "code": 6008, "name": "RequiresMultisig", "msg": "Withdrawal requires multisig approval" },
+    { "code": 6009, "name": "NoMultisigRequired", "msg": "Amount does not require multisig" },
+    { "code": 6010, "name": "NotAuthorizedSigner", "msg": "Not an authorized signer" },
+    { "code": 6011, "name": "AlreadySigned", "msg": "Already signed" },
+    { "code": 6012, "name": "WithdrawalNotApproved", "msg": "Withdrawal not approved" },
+    { "code": 6013, "name": "InvalidRequestStatus", "msg": "Invalid request status" },
+    { "code": 6014, "name": "RequestExpired", "msg": "Withdrawal request expired" }
+  ],
+  "metadata": {
+    "address": "ESCRoWpd9GSAJBPVbCHMKKxRANqVcqrq3BqTmmpvQJFF"
+  }
+}

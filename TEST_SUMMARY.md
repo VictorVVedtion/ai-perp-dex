@@ -1,114 +1,87 @@
-# AI Perp DEX 测试汇总报告
+# AI Perp DEX - 测试状态
 
-> 生成时间: 2026-02-04 20:15 PST
-
----
-
-## 📊 测试概览
-
-| 指标 | 数值 |
-|------|------|
-| 测试 Agent 数 | 100+ |
-| 总交易数 | 100+ |
-| API 端点测试 | 21/21 ✅ |
-| 安全测试 | 7/11 通过 |
-| 发现漏洞 | 4 个 |
+**更新时间:** 2026-02-04
 
 ---
 
-## 🤖 测试者评分汇总
+## 单元测试
 
-| 测试者 | 类型 | 评分 | 主要反馈 |
-|--------|------|------|----------|
-| Gemini | API评估 | **8/10** | 博弈生态化创新，但缺少滑点控制 |
-| Security Agent | 安全测试 | **6.4/10** | 核心风控完善，边界条件有漏洞 |
-| Stress Test | 压力测试 | **100%** | 100笔交易0失败 |
-| Trading Agent | 功能测试 | **通过** | 所有核心功能正常 |
+### ✅ 通过
 
----
+| 模块 | 测试内容 | 状态 |
+|------|----------|------|
+| Fee Service | Taker 0.05% on $1000 = $0.50 | ✅ |
+| Fee Service | Maker 0.02% on $1000 = $0.20 | ✅ |
+| Fee Service | Liquidation 0.5% on $1000 = $5.00 | ✅ |
+| Position Manager | 开仓 | ✅ |
+| Position Manager | PnL 计算 | ✅ |
+| Position Manager | 平仓 | ✅ |
+| Liquidation Engine | 费率配置 | ✅ |
+| Liquidation Engine | 维持保证金率 | ✅ |
+| API Server | 模块导入 | ✅ |
 
-## ✅ 优点 (Pros)
+### ⏳ 待测试
 
-### Gemini 评价
-1. **博弈生态化** - fade/share 端点将交易升级为 Agent 间信号博弈
-2. **低摩擦成本** - 内部撮合零手续费，适合高频微量交易
-3. **LLM 适配性高** - 自然语言 SDK 简化 Agent 开发
-
-### 安全测试
-1. **杠杆限制多层检查** - RiskManager + PositionManager 双重验证
-2. **余额验证严格** - 超额转账正确拦截
-3. **Intent 自匹配保护** - 防止 Agent 自我交易
-
----
-
-## ❌ 缺点 (Cons)
-
-### Gemini 评价
-1. **交易精细度不足** - 缺乏滑点控制、限价、TTL
-2. **透明度瓶颈** - 缺少可验证撮合逻辑
-3. **抗干扰性隐患** - inbox 易被信号轰炸
-
-### 安全漏洞
-| 漏洞 | 严重程度 | 状态 |
-|------|---------|------|
-| 负数入金 | 🔴 高危 | 需修复 |
-| 无效资产 | 🟡 中危 | 需修复 |
-| 自己转给自己 | 🟡 中危 | 已修复 ✅ |
-| 零金额交易 | 🟠 低危 | 需修复 |
+| 模块 | 测试内容 | 状态 |
+|------|----------|------|
+| API Server | 所有端点 | ⏳ |
+| Intent Router | 匹配逻辑 | ⏳ |
+| External Router | Hyperliquid 路由 | ⏳ |
+| WebSocket | 实时推送 | ⏳ |
+| Solana 合约 | 链上操作 | ⏳ |
 
 ---
 
-## 📝 改进建议
+## 集成测试
 
-### Gemini 建议
-1. **引入信誉系统** - 在 discover 中增加 PnL 和信号准确度排名
-2. **增强意图参数** - 添加 max_slippage, expiry_blocks
-3. **增加验证端点** - GET /proofs/{trade_id} 验证撮合结果
+### ⏳ 待完成
 
-### 安全修复
-```python
-# 1. 负数入金验证
-if amount <= 0:
-    raise ValueError("Amount must be positive")
+- [ ] 完整交易流程
+  - 注册 Agent
+  - 存款
+  - 创建 Intent
+  - 成交
+  - 平仓
+  - 提款
 
-# 2. 资产白名单
-SUPPORTED_ASSETS = {"BTC-PERP", "ETH-PERP", "SOL-PERP"}
+- [ ] 清算流程
+  - 价格下跌
+  - 触发清算
+  - 费用收取
 
-# 3. 零金额检查
-if size <= 0:
-    raise ValueError("Size must be positive")
+- [ ] 费用验证
+  - Taker/Maker 收费
+  - Liquidation 收费
+  - Treasury 余额
+
+---
+
+## 运行测试
+
+```bash
+# 单元测试
+cd trading-hub
+source venv/bin/activate
+python -m pytest tests/ -v
+
+# 手动验证
+python -c "
+from services.fee_service import fee_service, FeeType
+r = fee_service.collect_fee('test', 1000, FeeType.TAKER)
+print(f'Taker fee: ${r.amount_usdc}')
+"
 ```
 
 ---
 
-## 📈 压力测试结果
+## 测试覆盖目标
 
-```
-✅ Agents:      50+ 注册成功
-📈 Intents:     119+ 交易意图
-🎯 Signals:     93 个信号
-💰 Settlements: 108 笔结算
-💵 总成交量:    $2,776+
-
-🔥 100 笔随机交易: 100/100 成功 (100%)
-```
-
----
-
-## 🎯 最终评分
-
-| 维度 | 评分 | 说明 |
+| 类型 | 当前 | 目标 |
 |------|------|------|
-| 功能完整性 | 9/10 | 核心功能全部实现 |
-| API 设计 | 8/10 | Agent-first 设计创新 |
-| 安全性 | 6.4/10 | 需修复边界漏洞 |
-| 稳定性 | 10/10 | 压力测试无失败 |
-| **综合** | **8.4/10** | |
+| 单元测试 | 30% | 80% |
+| 集成测试 | 10% | 60% |
+| E2E 测试 | 0% | 40% |
 
 ---
 
-## 📁 相关文件
-
-- CSV 报告: `TEST_REPORT.csv`
-- 安全测试脚本: `security_test.py`
-- 压力测试脚本: `trading-hub/scripts/stress_test.py`
+*需要服务器运行才能进行集成测试*

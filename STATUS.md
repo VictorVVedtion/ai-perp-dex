@@ -1,6 +1,6 @@
-# AI Perp DEX - 项目状态报告
+# AI Perp DEX - 项目状态
 
-**更新时间:** 2026-02-04 15:30 PST
+**更新时间:** 2026-02-04 21:20 PST
 
 ---
 
@@ -8,268 +8,153 @@
 
 | 组件 | 状态 | 完成度 |
 |------|------|--------|
-| Trade Router (后端) | ✅ 运行中 | 95% |
-| Python SDK | ✅ 可用 | 90% |
-| 数据持久化 | ✅ SQLite | 100% |
-| Agent 认证 | ✅ API Key | 80% |
-| 实时价格 | ✅ CoinGecko | 100% |
+| Intent Router (P2P) | ✅ 完成 | 100% |
+| 费用收取 | ✅ 完成 | 100% |
+| 清算引擎 | ✅ 完成 | 100% |
+| Position Manager | ✅ 完成 | 100% |
+| Price Feed | ✅ 完成 | 100% |
+| Funding Rate | ✅ 完成 | 100% |
+| Python SDK | ✅ 完成 | 100% |
+| TypeScript SDK | ✅ 完成 | 100% |
+| Solana 合约 | ✅ Devnet | 100% |
 | 前端 Dashboard | ⚠️ 基础 | 40% |
-| **链上结算** | ✅ **完成!** | **100%** |
-| **结算服务** | ✅ **运行中** | **100%** |
+| 测试覆盖 | ⚠️ 部分 | 50% |
+| 生产部署 | ❌ 待做 | 0% |
 
 ---
 
-## 1️⃣ Trade Router (后端)
+## ✅ 已完成功能
 
-**位置:** `trade-router/src/`
+### 1. P2P 交易系统
+- Intent 发布 (Trader)
+- Quote 响应 (Market Maker)
+- 自动匹配成交
+- 外部路由 (Hyperliquid)
 
-**代码量:** 725 行 Rust
+### 2. 费用收取 (PRD 对齐)
+| 费用类型 | 费率 | 实现 |
+|----------|------|------|
+| Taker Fee | 0.05% | ✅ `fee_service.py` |
+| Maker Fee | 0.02% | ✅ `fee_service.py` |
+| Funding Rate | ±0.01%/8h | ✅ `funding.py` |
+| Liquidation Fee | 0.5% | ✅ `liquidation_engine.py` |
 
-### ✅ 已完成
-- `/health` - 健康检查
-- `/markets` - 市场列表 (BTC/ETH/SOL-PERP)
-- `/trade/request` - 创建交易请求
-- `/trade/quote` - MM 提交报价
-- `/trade/accept` - 接受报价
-- `/trade/close` - 平仓
-- `/positions/:agent_id` - 查询持仓
-- `/requests` - 查询待处理请求
-- `/quotes/:request_id` - 查询报价
-- `/ws` - WebSocket 实时推送
+### 3. 风控系统
+- 保证金计算
+- 清算价格监控
+- 每日亏损限制
+- 风控告警
 
-### ❌ 缺失
-- Agent 注册/身份验证
-- 签名验证
-- 保证金管理
-- 风控系统 (限额、熔断)
-- 持久化存储 (目前内存)
-- 真实价格 Oracle
+### 4. 清算引擎
+- 每 5 秒检查所有仓位
+- 维持保证金率 5%
+- 自动强平 + 收费
+- WebSocket 广播
 
----
-
-## 2️⃣ Python SDK
-
-**位置:** `sdk/python/ai_perp_dex/`
-
-**代码量:** 783 行 Python
-
-### ✅ 已完成
-
-**TradingAgent:**
-```python
-trader = TradingAgent(agent_id="my_trader")
-await trader.get_markets()
-await trader.get_positions()
-await trader.close(position_id, size_percent=100)  # ← NEW
-```
-
-**MarketMaker:**
-```python
-mm = MarketMaker(agent_id="my_mm")
-
-@mm.on_request
-async def handle(request):
-    return await mm.auto_quote(request, spread_bps=15)
-
-await mm.run()
-```
-
-### ❌ 缺失
-- 签名功能 (private_key 未使用)
-- 错误重试机制
-- 连接断开重连
-- 完整的 WebSocket 事件处理
+### 5. Solana 合约
+- **Program ID**: `AHjGBth6uAKVipLGnooZ9GYn7vwSKPJLX4Lq7Hio3CjT`
+- **Network**: Devnet
+- 指令: initialize, register_agent, deposit, withdraw, open_position, close_position, liquidate, settle_pnl
 
 ---
 
-## 3️⃣ 前端 Dashboard
-
-**位置:** `frontend/src/`
-
-**代码量:** 268 行 TypeScript/React
-
-### ✅ 已完成
-- `/` - Dashboard (统计、市场、请求列表)
-- `/agents` - Agent 列表页
-- `/markets` - 市场详情页
-- 暗色主题 + 毛玻璃卡片
-
-### ❌ 缺失
-- Agent 管理功能 (注册、配置)
-- 实时数据更新 (WebSocket)
-- 交易历史
-- 图表
-
----
-
-## 4️⃣ 交易流程验证
-
-### 测试结果
-```
-✅ 获取市场: 3 个
-✅ 创建请求: 成功
-✅ 查询请求: 成功
-⚠️  获取报价: 0 (需要 MM 运行)
-✅ 查询持仓: 成功
-```
-
-### 完整流程
-```
-Trader               Trade Router              MM
-   |                      |                    |
-   |--create_request----->|                    |
-   |                      |----broadcast------>|
-   |                      |<---create_quote----|
-   |<---get_quotes--------|                    |
-   |---accept_quote------>|                    |
-   |                      |----notify--------->|
-   |<---position_created--|                    |
-```
-
-**问题:** 需要同时运行 Trader 和 MM 来测试完整流程。
-
----
-
-## 5️⃣ 下一步优先级
-
-### P0 - 必须完成 (让系统能跑起来)
-
-1. **完成 MM 自动报价测试**
-   - 运行 SimpleMarketMaker
-   - 验证 Trader 能收到报价并成交
-
-2. **修复 accept_quote 流程**
-   - 确保 Position 正确创建
-   - WebSocket 推送成交通知
-
-### P1 - 核心功能
-
-3. **Agent 身份验证**
-   - 添加 API Key 或签名验证
-   - Agent 注册流程
-
-4. **数据持久化**
-   - 请求/报价/持仓存储
-   - 使用 SQLite 或 PostgreSQL
-
-5. **实时价格**
-   - 集成 Pyth/Chainlink Oracle
-   - 或使用 CoinGecko API
-
-### P2 - 增强功能
-
-6. **风控系统**
-   - 单 Agent 限额
-   - 系统级熔断
-   - 异常检测
-
-7. **前端完善**
-   - WebSocket 实时更新
-   - Agent 管理界面
-   - 交易历史
-
----
-
-## 📁 项目结构
+## 📁 代码结构
 
 ```
 ai-perp-dex/
-├── trade-router/       # Rust 后端 (运行中)
-│   └── src/
-│       ├── main.rs
-│       ├── handlers.rs
-│       ├── types.rs
-│       ├── state.rs
-│       └── websocket.rs
+├── trading-hub/              # Python 后端
+│   ├── api/
+│   │   └── server.py         # FastAPI (1600+ 行)
+│   ├── services/
+│   │   ├── fee_service.py    # 费用收取 ✅
+│   │   ├── liquidation_engine.py  # 清算 ✅
+│   │   ├── position_manager.py    # 持仓 ✅
+│   │   ├── price_feed.py     # 价格 ✅
+│   │   ├── funding.py        # Funding ✅
+│   │   ├── settlement.py     # 结算 ✅
+│   │   └── external_router.py # 外部路由 ✅
+│   └── db/
+│       └── store.py          # 数据存储 ✅
 │
-├── sdk/python/         # Python SDK
-│   └── ai_perp_dex/
-│       ├── client.py   # 底层 HTTP/WS
-│       ├── trader.py   # TradingAgent
-│       ├── mm.py       # MarketMaker
-│       └── types.py
+├── solana-program/           # Solana 合约 ✅
+│   └── programs/ai-perp-dex/
 │
-├── frontend/           # Next.js 前端 (运行中)
-│   └── src/
-│       ├── app/
-│       └── lib/
+├── sdk/
+│   ├── python/               # Python SDK ✅
+│   └── typescript/           # TypeScript SDK ✅
 │
-├── ARCHITECTURE.md     # 架构设计
-├── PRD.md             # 产品需求
-└── STATUS.md          # 本文件
+└── frontend/                 # Next.js ⚠️
 ```
 
 ---
 
-## 🚀 快速启动
+## 🔌 API 端点
+
+### 核心端点 (已实现)
+```
+GET  /health              # 健康检查
+GET  /stats               # 系统统计 (含费用)
+GET  /markets             # 市场列表
+GET  /prices              # 实时价格
+
+POST /agents/register     # 注册 Agent
+GET  /agents              # Agent 列表
+
+POST /intents             # 创建交易意图
+GET  /intents             # 意图列表
+GET  /matches             # 成交记录
+
+GET  /positions/{agent}   # 持仓查询
+POST /positions/{id}/close # 平仓
+GET  /positions/{id}/health # 健康度
+
+GET  /fees                # 费用统计
+GET  /liquidations        # 清算记录
+
+POST /deposit             # 存款
+POST /withdraw            # 取款
+
+WS   /ws                  # 实时推送
+```
+
+---
+
+## ⏳ 待完成
+
+### P0 - 必须
+- [ ] 完整端到端测试
+- [ ] API 稳定性验证
+- [ ] 错误处理完善
+
+### P1 - 重要
+- [ ] API 版本化 (/v1/)
+- [ ] PostgreSQL 持久化
+- [ ] 日志系统完善
+
+### P2 - 优化
+- [ ] 性能优化
+- [ ] 多源 Oracle
+- [ ] Agent 信誉完善
+
+---
+
+## 🚀 启动命令
 
 ```bash
-# 1. 启动后端
-cd trade-router && cargo run
+# 后端
+cd trading-hub
+source venv/bin/activate
+uvicorn api.server:app --reload --port 8082
 
-# 2. 启动前端
-cd frontend && npm run dev
+# 前端
+cd frontend
+npm run dev
 
-# 3. 运行 SDK 测试
-cd sdk/python
-source /path/to/venv/bin/activate
-python examples/demo.py
+# 测试
+cd trading-hub
+python -m pytest tests/
 ```
 
 ---
 
-**总结:** 基础架构已就位，需要完成 Agent 间交易的完整测试，然后补充身份验证和持久化。
-
----
-
-## 🔗 链上结算 (NEW!)
-
-**更新时间:** 2026-02-04 15:30 PST
-
-### Solana 合约
-
-**Program ID:** `AHjGBth6uAKVipLGnooZ9GYn7vwSKPJLX4Lq7Hio3CjT`
-**Network:** Devnet
-
-**已实现指令:**
-- ✅ `initialize` - 初始化交易所
-- ✅ `register_agent` - 注册 Agent
-- ✅ `create_market` - 创建市场
-- ✅ `update_collateral` - 更新 USDC Mint
-- ✅ `deposit` - 存入抵押金
-- ✅ `withdraw` - 提取抵押金
-- ✅ `open_position` - 开仓
-- ✅ `close_position` - 平仓
-- ✅ `liquidate` - 清算
-- ✅ `settle_pnl` - 结算盈亏
-
-### 结算服务
-
-**位置:** `settlement-service/server.py`
-**端口:** 8081
-
-**API 端点:**
-- `GET /health` - 健康检查
-- `GET /collateral/{owner}` - 查询抵押金
-- `GET /position/{owner}/{market}` - 查询仓位
-- `POST /settle/open` - 开仓结算
-- `POST /settle/close` - 平仓结算
-
-### 测试结果 (2026-02-04)
-
-| 测试 | 状态 | 结果 |
-|------|------|------|
-| 存款 100 USDC | ✅ | Vault +100 |
-| 开仓 0.01 BTC @ $97K | ✅ | 保证金锁定 |
-| 平仓 @ $98K | ✅ | 盈利 $10 |
-| 提款 $50 | ✅ | 钱包 +50 |
-| 集成测试 | ✅ | 盈利 $5 |
-
-### 链上账户
-
-```
-Exchange: C857rEivZuX2PeSfv6v8U8vJnjQzgdTJ4UqWR9Qv18sW
-Agent: Bw5eFy9tTiPoKAq4tuoHDz1QSxxnLa5a7RsoafiLsF4k
-Market (BTC): CAjHhyDqUkmX8XYbNNpR2MNYUxh2fLx2ssCKgu2A7CQ8
-Vault: 7Enqyfoxn6q8HyAo25Yb4HrKxm5caxAafTm9sDHBaaNf
-```
+*架构: P2P Intent-based (非 CLOB)*

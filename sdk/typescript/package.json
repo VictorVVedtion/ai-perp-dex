@@ -1,0 +1,61 @@
+{
+  "name": "ai-perp-dex",
+  "version": "0.1.0",
+  "description": "AI-Native Perpetual DEX SDK - Trade with one line of code",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "trading",
+    "perpetual",
+    "dex",
+    "ai",
+    "agent",
+    "crypto",
+    "defi",
+    "derivatives",
+    "typescript"
+  ],
+  "author": "AI Perp DEX Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ai-perp-dex/sdk-typescript"
+  },
+  "homepage": "https://docs.ai-perp-dex.com",
+  "bugs": {
+    "url": "https://github.com/ai-perp-dex/sdk-typescript/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "eslint": "^8.56.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  },
+  "peerDependencies": {},
+  "dependencies": {}
+}
