@@ -6,13 +6,25 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depe
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Annotated
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_DOWN
 import asyncio
 import json
 import logging
 import uvicorn
+
+# 金融精度类型 - 避免浮点误差
+def to_decimal(v) -> Decimal:
+    """转换为 Decimal，保留 8 位小数"""
+    if isinstance(v, Decimal):
+        return v.quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+    return Decimal(str(v)).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+
+def to_float(d: Decimal) -> float:
+    """Decimal 转 float (用于 JSON 序列化)"""
+    return float(d)
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +37,6 @@ from services.fee_service import fee_service, FeeType
 from services.liquidation_engine import liquidation_engine
 
 # 鉴权中间件
-import sys
-sys.path.insert(0, '..')
 from middleware.auth import (
     verify_agent, 
     verify_agent_optional,
@@ -190,7 +200,6 @@ class RegisterRequest(BaseModel):
     display_name: Optional[str] = None
     twitter_handle: Optional[str] = None
 
-from pydantic import Field, field_validator
 
 VALID_ASSETS = [
     "BTC-PERP", "ETH-PERP", "SOL-PERP",  # 主流
@@ -214,6 +223,12 @@ class IntentRequest(BaseModel):
         if v not in VALID_ASSETS:
             raise ValueError(f"Invalid asset. Must be one of: {VALID_ASSETS}")
         return v
+    
+    @field_validator('size_usdc')
+    @classmethod
+    def validate_size(cls, v):
+        """确保金额精度 (最多 2 位小数)"""
+        return round(float(v), 2)
 
 class MatchRequest(BaseModel):
     intent_id: str
@@ -1440,11 +1455,16 @@ async def get_balance(agent_id: str):
     balance = settlement_engine.get_balance(agent_id)
     return balance.to_dict()
 
-from pydantic import Field
 
 class DepositRequest(BaseModel):
     agent_id: str
     amount: float = Field(..., gt=0, description="Amount must be positive")
+    
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v):
+        """确保金额精度 (最多 2 位小数)"""
+        return round(float(v), 2)
 
 @app.post("/deposit")
 async def deposit(
