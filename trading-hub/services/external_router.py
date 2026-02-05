@@ -12,6 +12,7 @@ import aiohttp
 import json
 import hashlib
 import time
+import os
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from enum import Enum
@@ -165,7 +166,7 @@ class ExternalRouter:
         if self.simulation_mode:
             return await self._simulate_fill(hl_asset, hl_side, notional, size_usdc)
         else:
-            return await self._execute_hyperliquid(hl_asset, hl_side, notional, price)
+            return await self._execute_hyperliquid(hl_asset, hl_side, notional, size_usdc, leverage, price)
     
     async def _simulate_fill(
         self,
@@ -207,36 +208,75 @@ class ExternalRouter:
         asset: str,
         side: str,
         notional: float,
+        margin: float,
+        leverage: int,
         price: float = None,
     ) -> ExternalFill:
         """
         真实执行到 Hyperliquid
         
-        注意: 需要配置 API key 和签名
+        需要设置环境变量: HL_PRIVATE_KEY
         """
-        # TODO: 实现真实的 Hyperliquid 交易
-        # 需要:
-        # 1. 钱包私钥
-        # 2. 签名逻辑
-        # 3. 下单 API 调用
+        from services.hyperliquid_client import HyperliquidClient
         
-        raise NotImplementedError(
-            "Real Hyperliquid execution requires API key configuration. "
-            "Use simulation_mode=True for testing."
+        private_key = os.environ.get("HL_PRIVATE_KEY")
+        if not private_key:
+            raise ValueError("HL_PRIVATE_KEY not set. Use simulation_mode=True for testing.")
+        
+        # 创建客户端
+        client = HyperliquidClient(
+            private_key=private_key,
+            testnet=False,  # 主网
         )
+        client.connect()
+        
+        # 获取价格计算数量
+        current_price = client.get_price(asset)
+        if current_price == 0:
+            raise ValueError(f"Could not get price for {asset}")
+        
+        # 计算币的数量 (notional / price)
+        size = notional / current_price
+        
+        # 下单
+        is_buy = (side == "buy")
+        result = client.market_open(asset, is_buy, size, slippage=0.01)
+        
+        if not result.success:
+            raise Exception(f"Order failed: {result.error}")
+        
+        # 计算费用
+        fee = notional * self.FEES["hyperliquid"]
+        
+        fill = ExternalFill(
+            venue="hyperliquid",
+            order_id=result.order_id or f"hl_{int(time.time() * 1000)}",
+            asset=f"{asset}-PERP",
+            side=side,
+            size=margin,
+            price=result.avg_price or current_price,
+            fee=fee,
+        )
+        
+        # 更新统计
+        self._update_stats("hyperliquid", margin, fee)
+        
+        print(f"🔀 [REAL] {side.upper()} {asset} ${margin:.2f} @ ${fill.price:,.2f} (fee: ${fee:.4f})")
+        
+        return fill
     
     async def _get_hl_price(self, asset: str) -> float:
         """从 Hyperliquid 获取实时价格"""
         try:
-            async with self.session.post(
-                self.HL_INFO,
-                json={"type": "allMids"},
-                timeout=10,
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if asset in data:
-                        return float(data[asset])
+            # 使用官方 SDK
+            from hyperliquid.info import Info
+            from hyperliquid.utils import constants
+            
+            info = Info(constants.MAINNET_API_URL, skip_ws=True)
+            mids = info.all_mids()
+            
+            if asset in mids:
+                return float(mids[asset])
         except Exception as e:
             print(f"⚠️ HL price error: {e}")
         
