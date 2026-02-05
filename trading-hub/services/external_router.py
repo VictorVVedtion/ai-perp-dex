@@ -221,7 +221,7 @@ class ExternalRouter:
         
         private_key = os.environ.get("HL_PRIVATE_KEY")
         if not private_key:
-            raise ValueError("HL_PRIVATE_KEY not set. Use simulation_mode=True for testing.")
+            raise ValueError("HL_PRIVATE_KEY not set. Use simulation_mode=False for testing.")
         
         # 创建客户端
         client = HyperliquidClient(
@@ -237,6 +237,24 @@ class ExternalRouter:
         
         # 计算币的数量 (notional / price)
         size = notional / current_price
+        
+        # 处理精度问题 - 每个币有最小精度
+        size_precision = {
+            "BTC": 4,  # 0.0001 BTC
+            "ETH": 3,  # 0.001 ETH
+            "SOL": 1,  # 0.1 SOL
+        }
+        decimals = size_precision.get(asset, 2)
+        size = round(size, decimals)
+        
+        # 最小订单大小
+        min_size = {
+            "BTC": 0.001,
+            "ETH": 0.01,
+            "SOL": 0.1,
+        }
+        if size < min_size.get(asset, 0.01):
+            size = min_size.get(asset, 0.01)
         
         # 下单
         is_buy = (side == "buy")
@@ -303,7 +321,7 @@ class ExternalRouter:
 
 
 # 全局实例
-external_router = ExternalRouter(simulation_mode=True)
+external_router = ExternalRouter(simulation_mode=False)
 
 
 async def demo():
@@ -312,7 +330,7 @@ async def demo():
     print("🔀 EXTERNAL ROUTER DEMO")
     print("=" * 50)
     
-    router = ExternalRouter(simulation_mode=True)
+    router = ExternalRouter(simulation_mode=False)
     await router.start()
     
     # 测试路由
