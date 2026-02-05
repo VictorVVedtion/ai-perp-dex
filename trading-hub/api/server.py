@@ -164,7 +164,12 @@ class RegisterRequest(BaseModel):
 
 from pydantic import Field, field_validator
 
-VALID_ASSETS = ["BTC-PERP", "ETH-PERP", "SOL-PERP"]
+VALID_ASSETS = [
+    "BTC-PERP", "ETH-PERP", "SOL-PERP",  # 主流
+    "DOGE-PERP", "PEPE-PERP", "WIF-PERP",  # Meme
+    "ARB-PERP", "OP-PERP", "SUI-PERP",  # L2
+    "AVAX-PERP", "LINK-PERP", "AAVE-PERP",  # DeFi
+]
 
 class IntentRequest(BaseModel):
     agent_id: str

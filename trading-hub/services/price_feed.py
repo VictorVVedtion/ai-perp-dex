@@ -221,7 +221,14 @@ class PriceFeed:
                 if resp.status == 200:
                     data = await resp.json()
                     
-                    for symbol in ["BTC", "ETH", "SOL"]:
+                    # 支持的币种列表
+                    supported = [
+                        "BTC", "ETH", "SOL",  # 主流
+                        "DOGE", "PEPE", "WIF",  # Meme
+                        "ARB", "OP", "SUI",  # L2
+                        "AVAX", "LINK", "AAVE",  # DeFi
+                    ]
+                    for symbol in supported:
                         if symbol in data:
                             prices[symbol] = Price(
                                 asset=symbol,
