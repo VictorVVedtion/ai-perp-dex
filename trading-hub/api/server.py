@@ -69,8 +69,8 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"WebSocket broadcast failed: {e}")
 
 manager = ConnectionManager()
 
@@ -435,11 +435,19 @@ async def list_intents(asset: str = None, status: str = "open", limit: int = 100
     return {"intents": [i.to_dict() for i in intents]}
 
 @app.delete("/intents/{intent_id}")
-async def cancel_intent(intent_id: str):
-    """取消 Intent"""
-    intent = store.update_intent(intent_id, status=IntentStatus.CANCELLED)
+async def cancel_intent(
+    intent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """取消 Intent (需要认证，只能取消自己的)"""
+    intent = store.get_intent(intent_id)
     if not intent:
         raise HTTPException(status_code=404, detail="Intent not found")
+    
+    # 验证所有权
+    verify_agent_owns_resource(auth, intent.agent_id, "intent")
+    
+    intent = store.update_intent(intent_id, status=IntentStatus.CANCELLED)
     
     await manager.broadcast({
         "type": "intent_cancelled",
@@ -542,19 +550,26 @@ class FadeSignalRequest(BaseModel):
     fader_id: str
 
 @app.post("/signals")
-async def create_signal(req: CreateSignalRequest):
+async def create_signal(
+    req: CreateSignalRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
     """
-    创建预测信号
+    创建预测信号 (需要认证)
     
     示例: "ETH 24h 后 > $2200, 押注 $50"
     """
+    # 验证: Agent 只能为自己创建 Signal
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot create signal for another agent")
+    
     try:
         signal_type = SignalType(req.signal_type)
     except ValueError:
         raise HTTPException(400, f"Invalid signal_type. Use: price_above, price_below, price_change")
     
     # 验证 Agent
-    agent = store.get_agent(req.agent_id)
+    agent = store.get_agent(auth.agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
     
@@ -604,13 +619,20 @@ async def create_signal(req: CreateSignalRequest):
 
 
 @app.post("/signals/fade")
-async def fade_signal(req: FadeSignalRequest):
+async def fade_signal(
+    req: FadeSignalRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
     """
-    Fade 一个 Signal (对赌)
+    Fade 一个 Signal (对赌) - 需要认证
     
     押注相同金额，认为 Signal 预测错误
     """
-    agent = store.get_agent(req.fader_id)
+    # 验证: Agent 只能为自己 fade
+    if auth.agent_id != req.fader_id:
+        raise ForbiddenError("Cannot fade as another agent")
+    
+    agent = store.get_agent(auth.agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
     
@@ -817,30 +839,58 @@ class StopLossRequest(BaseModel):
     price: float
 
 @app.post("/positions/{position_id}/stop-loss")
-async def set_stop_loss(position_id: str, req: StopLossRequest):
-    """设置止损"""
+async def set_stop_loss(
+    position_id: str, 
+    req: StopLossRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """设置止损 (需要认证，只能操作自己的持仓)"""
     try:
+        pos = position_manager.positions.get(position_id)
+        if not pos:
+            raise HTTPException(404, "Position not found")
+        
+        # 验证所有权
+        verify_agent_owns_resource(auth, pos.agent_id, "position")
+        
         position_manager.set_stop_loss(position_id, req.price)
         return {"success": True}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
 @app.post("/positions/{position_id}/take-profit")
-async def set_take_profit(position_id: str, req: StopLossRequest):
-    """设置止盈"""
+async def set_take_profit(
+    position_id: str, 
+    req: StopLossRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """设置止盈 (需要认证，只能操作自己的持仓)"""
     try:
+        pos = position_manager.positions.get(position_id)
+        if not pos:
+            raise HTTPException(404, "Position not found")
+        
+        # 验证所有权
+        verify_agent_owns_resource(auth, pos.agent_id, "position")
+        
         position_manager.set_take_profit(position_id, req.price)
         return {"success": True}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
 @app.post("/positions/{position_id}/close")
-async def close_position(position_id: str):
-    """手动平仓"""
+async def close_position(
+    position_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """手动平仓 (需要认证，只能操作自己的持仓)"""
     try:
         pos = position_manager.positions.get(position_id)
         if not pos:
-            raise ValueError("Position not found")
+            raise HTTPException(404, "Position not found")
+        
+        # 验证所有权
+        verify_agent_owns_resource(auth, pos.agent_id, "position")
         
         asset = pos.asset.replace("-PERP", "")
         price_data = await price_feed.get_price(asset)
@@ -1049,18 +1099,32 @@ class DepositRequest(BaseModel):
     amount: float = Field(..., gt=0, description="Amount must be positive")
 
 @app.post("/deposit")
-async def deposit(req: DepositRequest):
-    """入金"""
-    balance = settlement_engine.deposit(req.agent_id, req.amount)
+async def deposit(
+    req: DepositRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """入金 (需要认证)"""
+    # 验证: 只能为自己入金
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot deposit for another agent")
+    
+    balance = settlement_engine.deposit(auth.agent_id, req.amount)
     return {"success": True, "balance": balance.to_dict()}
 
 @app.post("/withdraw")
-async def withdraw(req: DepositRequest):
-    """出金"""
-    success = settlement_engine.withdraw(req.agent_id, req.amount)
+async def withdraw(
+    req: DepositRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """出金 (需要认证)"""
+    # 验证: 只能为自己出金
+    if auth.agent_id != req.agent_id:
+        raise ForbiddenError("Cannot withdraw for another agent")
+    
+    success = settlement_engine.withdraw(auth.agent_id, req.amount)
     if not success:
         raise HTTPException(400, "Insufficient balance")
-    balance = settlement_engine.get_balance(req.agent_id)
+    balance = settlement_engine.get_balance(auth.agent_id)
     return {"success": True, "balance": balance.to_dict()}
 
 class TransferRequest(BaseModel):
@@ -1070,8 +1134,15 @@ class TransferRequest(BaseModel):
     onchain: bool = False
 
 @app.post("/transfer")
-async def transfer(req: TransferRequest):
-    """转账"""
+async def transfer(
+    req: TransferRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """转账 (需要认证，只能从自己的账户转出)"""
+    # 验证: 只能从自己的账户转出
+    if auth.agent_id != req.from_agent:
+        raise ForbiddenError("Cannot transfer from another agent's account")
+    
     # 禁止自转账
     if req.from_agent == req.to_agent:
         raise HTTPException(400, "Cannot transfer to yourself")
@@ -1079,11 +1150,11 @@ async def transfer(req: TransferRequest):
     try:
         if req.onchain:
             settlement = await settlement_engine.settle_onchain(
-                req.from_agent, req.to_agent, req.amount
+                auth.agent_id, req.to_agent, req.amount
             )
         else:
             settlement = await settlement_engine.settle_internal(
-                req.from_agent, req.to_agent, req.amount
+                auth.agent_id, req.to_agent, req.amount
             )
         return {"success": True, "settlement": settlement.to_dict()}
     except ValueError as e:

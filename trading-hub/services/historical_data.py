@@ -111,8 +111,8 @@ class HistoricalDataProvider:
                     )
                     for d in data
                 ]
-            except:
-                pass
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                logger.warning(f"Failed to load cache {key}: {e}")
         return None
     
     def _save_cache(self, key: str, data: List[OHLCV]):
@@ -148,8 +148,10 @@ class HistoricalDataProvider:
             if data:
                 self._save_cache(cache_key, data)
                 return data
-        except:
-            pass
+        except aiohttp.ClientError as e:
+            logger.warning(f"Binance fetch failed for {asset}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error fetching from Binance: {e}")
         
         # 回退到 CoinGecko
         try:
@@ -157,8 +159,10 @@ class HistoricalDataProvider:
             if data:
                 self._save_cache(cache_key, data)
                 return data
-        except:
-            pass
+        except aiohttp.ClientError as e:
+            logger.warning(f"CoinGecko fetch failed for {asset}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error fetching from CoinGecko: {e}")
         
         # 生成模拟数据
         return self._generate_mock_data(asset, days, interval)
@@ -367,7 +371,8 @@ class EnhancedBacktester:
             # 获取策略信号
             try:
                 signal = await strategy(price, position, capital, price_history, candle)
-            except:
+            except Exception as e:
+                logger.warning(f"Strategy signal error: {e}")
                 signal = None
             
             # 执行

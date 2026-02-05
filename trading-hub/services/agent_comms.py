@@ -230,8 +230,8 @@ class AgentCommunicator:
             ws = self._connections[agent_id]
             try:
                 await ws.send_json(msg.to_dict())
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to send message to agent {agent_id}: {e}")
         
         # 触发处理器
         if agent_id in self._handlers:
@@ -242,8 +242,8 @@ class AgentCommunicator:
                         await handler(msg)
                     else:
                         handler(msg)
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Message handler error for {agent_id}: {e}")
     
     def get_inbox(self, agent_id: str, limit: int = 50, unread_only: bool = False) -> List[AgentMessage]:
         """获取收件箱"""

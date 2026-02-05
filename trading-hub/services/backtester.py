@@ -186,7 +186,8 @@ class Backtester:
             # 获取策略信号
             try:
                 signal = await strategy(price, position, capital)
-            except:
+            except Exception as e:
+                logger.warning(f"Strategy signal error: {e}")
                 signal = None
             
             # 执行交易

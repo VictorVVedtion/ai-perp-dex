@@ -169,13 +169,14 @@ class AutonomousTrader:
             try:
                 ob = await self.hub.get_orderbook(asset)
                 orderbooks[asset] = ob
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to get orderbook for {asset}: {e}")
         
         # 获取排行榜
         try:
             leaderboard = await self.hub.get_leaderboard()
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get leaderboard: {e}")
             leaderboard = []
         
         return {

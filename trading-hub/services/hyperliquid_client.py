@@ -125,7 +125,8 @@ class HyperliquidClient:
         try:
             mids = self.info.all_mids()
             return float(mids.get(coin, 0))
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get price for {coin}: {e}")
             return 0
     
     def get_all_prices(self) -> Dict[str, float]:
@@ -136,7 +137,8 @@ class HyperliquidClient:
         try:
             mids = self.info.all_mids()
             return {k: float(v) for k, v in mids.items()}
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get all prices: {e}")
             return {}
     
     def get_positions(self) -> list[HLPosition]:
@@ -179,7 +181,8 @@ class HyperliquidClient:
                 "total_margin_used": float(margin.get("totalMarginUsed", 0)),
                 "withdrawable": float(margin.get("withdrawable", 0)),
             }
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get balance: {e}")
             return {}
     
     def market_open(
@@ -294,7 +297,8 @@ class HyperliquidClient:
         try:
             result = self.exchange.cancel(coin, order_id)
             return result.get("status") == "ok"
-        except:
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id} for {coin}: {e}")
             return False
 
 

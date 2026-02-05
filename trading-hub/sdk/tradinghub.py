@@ -121,8 +121,12 @@ class TradingHub:
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             await self._handle_ws_message(json.loads(msg.data))
-            except:
+            except aiohttp.ClientError as e:
+                logger.warning(f"WebSocket connection error, reconnecting: {e}")
                 await asyncio.sleep(3)  # 重连
+            except Exception as e:
+                logger.error(f"Unexpected WebSocket error: {e}")
+                await asyncio.sleep(3)
     
     async def _handle_ws_message(self, message: dict):
         """处理 WebSocket 消息"""

@@ -330,8 +330,8 @@ class PositionManager:
                     await cb(pos)
                 else:
                     cb(pos)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Close position callback error: {e}")
     
     def close_position_manual(self, position_id: str, close_price: float) -> Position:
         """手动平仓"""
@@ -384,8 +384,8 @@ class PositionManager:
         for cb in self._on_alert_callbacks:
             try:
                 cb(alert)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Alert callback error: {e}")
         
         return alert
     

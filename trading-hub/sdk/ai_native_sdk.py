@@ -391,8 +391,8 @@ class AINativeSDK:
                         await cb(data)
                     else:
                         cb(data)
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Match callback error: {e}")
         
         elif msg_type in ["signal_created", "signal_faded", "bet_settled"]:
             for cb in self._on_signal_callbacks:
@@ -401,8 +401,8 @@ class AINativeSDK:
                         await cb(data)
                     else:
                         cb(data)
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Signal callback error: {e}")
     
     async def stop_listening(self):
         """停止监听"""

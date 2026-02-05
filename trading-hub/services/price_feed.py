@@ -150,8 +150,8 @@ class PriceFeed:
                 for price in self.prices.values():
                     try:
                         await callback(price)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Price callback error: {e}")
                         
         except Exception as e:
             print(f"⚠️ Price update error: {e}")
