@@ -38,6 +38,8 @@ export default function PortfolioPage() {
   const [loginInput, setLoginInput] = useState({ apiKey: '', agentId: '' });
   const [depositAmount, setDepositAmount] = useState('');
   const [showDeposit, setShowDeposit] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [showWithdraw, setShowWithdraw] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('perp_dex_auth');
@@ -122,6 +124,38 @@ export default function PortfolioPage() {
       } else {
         const err = await res.json();
         alert(err.detail || 'Deposit failed');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!apiKey || !agentId || !withdrawAmount) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/withdraw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          agent_id: agentId,
+          amount: parseFloat(withdrawAmount),
+        }),
+      });
+      
+      if (res.ok) {
+        setShowWithdraw(false);
+        setWithdrawAmount('');
+        fetchPortfolio();
+      } else {
+        const err = await res.json();
+        alert(err.detail || 'Withdraw failed');
       }
     } catch (e) {
       console.error(e);
@@ -257,6 +291,12 @@ export default function PortfolioPage() {
           >
             + Deposit
           </button>
+          <button
+            onClick={() => setShowWithdraw(true)}
+            className="bg-[#FF6B35] hover:bg-[#FF8555] text-white px-4 py-2 rounded-lg font-bold"
+          >
+            − Withdraw
+          </button>
           <Link
             href="/trade"
             className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-bold"
@@ -390,6 +430,61 @@ export default function PortfolioPage() {
                   className="flex-1 bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-4 py-2 rounded-lg font-bold disabled:opacity-50"
                 >
                   {loading ? 'Processing...' : 'Deposit'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Withdraw Modal */}
+      {showWithdraw && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Withdraw Funds</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-zinc-400 block mb-1">Amount (USDC)</label>
+                <input
+                  type="number"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  placeholder="100"
+                  max={balance?.available || 0}
+                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-2 text-white font-mono text-lg"
+                />
+              </div>
+              
+              <div className="text-sm text-zinc-500">
+                Available: ${balance?.available.toFixed(2) || '0.00'}
+              </div>
+              
+              <div className="flex gap-2">
+                {[25, 50, 75, 100].map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => setWithdrawAmount(((balance?.available || 0) * pct / 100).toFixed(2))}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-2 py-1 rounded text-sm"
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowWithdraw(false)}
+                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleWithdraw}
+                  disabled={loading || !withdrawAmount || parseFloat(withdrawAmount) > (balance?.available || 0)}
+                  className="flex-1 bg-[#FF6B35] hover:bg-[#FF8555] text-white px-4 py-2 rounded-lg font-bold disabled:opacity-50"
+                >
+                  {loading ? 'Processing...' : 'Withdraw'}
                 </button>
               </div>
             </div>
