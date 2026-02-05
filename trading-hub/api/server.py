@@ -1035,6 +1035,7 @@ async def startup_position_manager():
 async def startup_liquidation():
     """启动清算引擎"""
     # 注入依赖
+    position_manager.set_settlement_engine(settlement_engine)  # 余额同步
     fee_service.set_position_manager(position_manager)
     liquidation_engine.set_dependencies(position_manager, price_feed, fee_service)
     await liquidation_engine.start()

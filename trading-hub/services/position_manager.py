@@ -156,8 +156,9 @@ class PositionManager:
         self.alerts: Dict[str, RiskAlert] = {}
         self.price_feed = price_feed
         
-        # Agent 账户
-        self.agent_balances: Dict[str, float] = {}  # agent_id -> balance
+        # Agent 账户 (settlement_engine 是权威来源)
+        self.settlement_engine = None  # 在 startup 时注入
+        self.agent_balances: Dict[str, float] = {}  # 缓存，仅用于无 settlement_engine 时
         self.agent_daily_pnl: Dict[str, float] = {}  # agent_id -> daily pnl
         
         # 回调
@@ -173,6 +174,32 @@ class PositionManager:
         self._running = True
         self._monitor_task = asyncio.create_task(self._monitor_loop())
         print("📊 Position Manager started")
+    
+    def set_settlement_engine(self, settlement_engine):
+        """注入 settlement_engine"""
+        self.settlement_engine = settlement_engine
+    
+    def get_agent_balance(self, agent_id: str) -> float:
+        """获取 Agent 余额 (从 settlement_engine 读取)"""
+        if self.settlement_engine:
+            balance = self.settlement_engine.get_balance(agent_id)
+            return balance.available if balance else 0
+        # 回退到内存缓存
+        return self.agent_balances.get(agent_id, 0)
+    
+    def update_agent_balance(self, agent_id: str, amount_change: float) -> float:
+        """更新 Agent 余额 (同步到 settlement_engine)"""
+        if self.settlement_engine:
+            if amount_change > 0:
+                self.settlement_engine.deposit(agent_id, amount_change)
+            else:
+                self.settlement_engine.withdraw(agent_id, -amount_change)
+            balance = self.settlement_engine.get_balance(agent_id)
+            return balance.available if balance else 0
+        # 回退到内存缓存
+        current = self.agent_balances.get(agent_id, 0)
+        self.agent_balances[agent_id] = current + amount_change
+        return self.agent_balances[agent_id]
     
     async def stop(self):
         """停止监控"""
@@ -272,13 +299,13 @@ class PositionManager:
         
         # 检查每日亏损限额
         daily_pnl = self.agent_daily_pnl.get(agent_id, 0)
-        balance = self.agent_balances.get(agent_id, 1000)  # 默认 $1000
+        balance = self.get_agent_balance(agent_id) or 1000  # 默认 $1000
         if daily_pnl < -balance * self.DAILY_LOSS_LIMIT_PCT:
             raise ValueError(f"Daily loss limit reached: ${daily_pnl:.2f}")
         
         # === P0 修复: 保证金检查 ===
         required_margin = size_usdc / leverage
-        available_balance = self.agent_balances.get(agent_id, 0)
+        available_balance = self.get_agent_balance(agent_id)
         
         # 计算已用保证金
         used_margin = 0
@@ -340,6 +367,10 @@ class PositionManager:
             take_profit=take_profit,
         )
         
+        # 扣除保证金
+        margin = size_usdc / leverage
+        self.update_agent_balance(agent_id, -margin)
+        
         position.update_pnl(entry_price)
         self.positions[position_id] = position
         
@@ -385,6 +416,11 @@ class PositionManager:
         # 更新每日 PnL
         agent_id = pos.agent_id
         self.agent_daily_pnl[agent_id] = self.agent_daily_pnl.get(agent_id, 0) + pos.realized_pnl
+        
+        # 返还保证金 + PnL
+        margin = pos.size_usdc / pos.leverage
+        balance_change = margin + pos.realized_pnl
+        self.update_agent_balance(agent_id, balance_change)
         
         return pos
     
@@ -469,7 +505,7 @@ class PositionManager:
         # 更新余额 (返还保证金 + PnL)
         margin = pos.size_usdc / pos.leverage
         balance_change = margin + pos.realized_pnl
-        self.agent_balances[agent_id] = self.agent_balances.get(agent_id, 0) + balance_change
+        self.update_agent_balance(agent_id, balance_change)
         
         return pos
     

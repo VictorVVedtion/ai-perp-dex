@@ -135,13 +135,13 @@ class FeeService:
         self.total_collected += fee_amount
         self.treasury_balance += fee_amount
         
-        # 从 Agent 余额扣除费用
+        # 从 Agent 余额扣除费用 (通过 settlement_engine)
         if self.position_manager:
-            current_balance = self.position_manager.agent_balances.get(agent_id, 0)
-            self.position_manager.agent_balances[agent_id] = current_balance - fee_amount
+            current_balance = self.position_manager.get_agent_balance(agent_id)
+            new_balance = self.position_manager.update_agent_balance(agent_id, -fee_amount)
             logger.info(
                 f"Fee deducted: ${fee_amount:.4f} from {agent_id} "
-                f"(balance: ${current_balance:.2f} -> ${current_balance - fee_amount:.2f})"
+                f"(balance: ${current_balance:.2f} -> ${new_balance:.2f})"
             )
         
         logger.info(
