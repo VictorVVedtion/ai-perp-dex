@@ -690,7 +690,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.post("/demo/seed")
 async def seed_demo_data():
-    """生成模拟数据"""
+    """
+    生成模拟数据 (仅限开发/测试环境)
+    """
+    import os
+    if os.getenv("API_ENV") == "production":
+        raise HTTPException(403, "Demo endpoint disabled in production")
+    
     # 创建一些 Agent
     agents = []
     for i in range(5):
@@ -775,6 +781,10 @@ async def create_signal(
         raise HTTPException(404, "Agent not found")
     
     try:
+        # 获取当前价格 (用于 PRICE_CHANGE 类型)
+        asset_name = req.asset.replace("-PERP", "")
+        current_price = price_feed.get_cached_price(asset_name) or 0.0
+        
         signal = signal_betting.create_signal(
             creator_id=req.agent_id,
             asset=req.asset,
@@ -782,6 +792,7 @@ async def create_signal(
             target_value=req.target_value,
             stake_amount=req.stake_amount,
             duration_hours=req.duration_hours,
+            current_price=current_price,  # 传入当前价格
         )
         
         # 生成人类可读描述
@@ -945,16 +956,26 @@ async def get_signal(signal_id: str):
 
 
 @app.post("/bets/{bet_id}/settle")
-async def settle_bet(bet_id: str, price: float = None):
+async def settle_bet(
+    bet_id: str, 
+    price: float = None,
+    auth: AgentAuth = Depends(verify_agent)
+):
     """
-    结算对赌
+    结算对赌 (需要认证，只有参与者可结算)
     
     需要提供结算价格，或者使用当前价格
     """
     try:
+        # 验证调用者是参与者
+        bet = signal_betting.bets.get(bet_id)
+        if not bet:
+            raise HTTPException(404, "Bet not found")
+        if auth.agent_id not in [bet.creator_id, bet.fader_id]:
+            raise ForbiddenError("Only bet participants can settle")
+        
         # 获取当前价格
         if price is None:
-            bet = signal_betting.bets.get(bet_id)
             if bet:
                 asset = bet.asset.replace("-PERP", "")
                 price = price_feed.get_price(asset)
@@ -1013,6 +1034,8 @@ async def startup_position_manager():
 @app.on_event("startup")
 async def startup_liquidation():
     """启动清算引擎"""
+    # 注入依赖
+    fee_service.set_position_manager(position_manager)
     liquidation_engine.set_dependencies(position_manager, price_feed, fee_service)
     await liquidation_engine.start()
     
@@ -1151,8 +1174,17 @@ async def get_alerts(agent_id: str):
     }
 
 @app.post("/alerts/{alert_id}/ack")
-async def acknowledge_alert(alert_id: str):
-    """确认告警"""
+async def acknowledge_alert(
+    alert_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """确认告警 (需要认证，只能确认自己的告警)"""
+    alert = position_manager.alerts.get(alert_id)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    if alert.agent_id != auth.agent_id:
+        raise ForbiddenError("Cannot acknowledge other agent's alerts")
+    
     position_manager.acknowledge_alert(alert_id)
     return {"success": True}
 
@@ -1520,8 +1552,15 @@ class RiskLimitsUpdate(BaseModel):
     max_daily_loss: Optional[float] = None
 
 @app.post("/risk/{agent_id}/limits")
-async def update_risk_limits(agent_id: str, req: RiskLimitsUpdate):
-    """更新风险限额"""
+async def update_risk_limits(
+    agent_id: str, 
+    req: RiskLimitsUpdate,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """更新风险限额 (需要认证，只能修改自己的限额)"""
+    if auth.agent_id != agent_id:
+        raise ForbiddenError("Cannot modify other agent's risk limits")
+    
     limits = risk_manager.set_limits(
         agent_id,
         **{k: v for k, v in req.dict().items() if v is not None}

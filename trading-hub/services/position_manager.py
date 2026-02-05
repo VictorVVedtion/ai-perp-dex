@@ -438,6 +438,41 @@ class PositionManager:
             positions = [p for p in positions if p.is_open]
         return positions
     
+    def get_all_positions(self, only_open: bool = True) -> List[Position]:
+        """获取所有持仓 (供清算引擎使用)"""
+        positions = list(self.positions.values())
+        if only_open:
+            positions = [p for p in positions if p.is_open]
+        return positions
+    
+    def close_position(self, position_id: str, exit_price: float = None, reason: str = "manual") -> Position:
+        """
+        平仓 (同步版本，供清算引擎使用)
+        """
+        pos = self.positions.get(position_id)
+        if not pos or not pos.is_open:
+            raise ValueError("Position not found or already closed")
+        
+        if exit_price:
+            pos.update_pnl(exit_price)
+        
+        pos.is_open = False
+        pos.closed_at = datetime.now()
+        pos.close_price = pos.current_price
+        pos.realized_pnl = pos.unrealized_pnl
+        pos.close_reason = reason
+        
+        # 更新每日 PnL
+        agent_id = pos.agent_id
+        self.agent_daily_pnl[agent_id] = self.agent_daily_pnl.get(agent_id, 0) + pos.realized_pnl
+        
+        # 更新余额 (返还保证金 + PnL)
+        margin = pos.size_usdc / pos.leverage
+        balance_change = margin + pos.realized_pnl
+        self.agent_balances[agent_id] = self.agent_balances.get(agent_id, 0) + balance_change
+        
+        return pos
+    
     def get_portfolio_value(self, agent_id: str) -> dict:
         """获取投资组合价值"""
         positions = self.get_positions(agent_id, only_open=True)

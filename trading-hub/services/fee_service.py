@@ -10,7 +10,7 @@ Fee Service - 手续费服务
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from enum import Enum
 import logging
 
@@ -70,6 +70,13 @@ class FeeService:
         self.fee_records: Dict[str, FeeRecord] = {}
         self.total_collected: float = 0.0
         self.treasury_balance: float = 0.0
+        
+        # 注入 position_manager 以扣款
+        self.position_manager = None
+    
+    def set_position_manager(self, pm):
+        """注入 position_manager"""
+        self.position_manager = pm
     
     def calculate_fee(
         self, 
@@ -127,6 +134,15 @@ class FeeService:
         self.fee_records[record.fee_id] = record
         self.total_collected += fee_amount
         self.treasury_balance += fee_amount
+        
+        # 从 Agent 余额扣除费用
+        if self.position_manager:
+            current_balance = self.position_manager.agent_balances.get(agent_id, 0)
+            self.position_manager.agent_balances[agent_id] = current_balance - fee_amount
+            logger.info(
+                f"Fee deducted: ${fee_amount:.4f} from {agent_id} "
+                f"(balance: ${current_balance:.2f} -> ${current_balance - fee_amount:.2f})"
+            )
         
         logger.info(
             f"Fee collected: {fee_type.value} ${fee_amount:.4f} from {agent_id} "

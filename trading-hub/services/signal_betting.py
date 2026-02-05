@@ -43,6 +43,7 @@ class Signal:
     stake_amount: float         # 押注金额 (USDC)
     expires_at: datetime        # 预测到期时间
     created_at: datetime = field(default_factory=datetime.now)
+    created_price: float = 0.0  # 创建时的价格 (用于计算涨跌幅)
     status: SignalStatus = SignalStatus.OPEN
     
     # 匹配信息
@@ -114,6 +115,7 @@ class SignalBettingService:
         target_value: float,
         stake_amount: float,
         duration_hours: int = 24,
+        current_price: float = 0.0,  # 当前价格 (用于 PRICE_CHANGE 类型)
     ) -> Signal:
         """
         创建预测信号
@@ -121,7 +123,7 @@ class SignalBettingService:
         示例:
         - "ETH 24h 后 > $2200" (PRICE_ABOVE)
         - "BTC 24h 后 < $70000" (PRICE_BELOW)
-        - "SOL 24h 涨幅 > 5%" (PRICE_CHANGE)
+        - "SOL 24h 涨幅 > 5%" (PRICE_CHANGE, 需要传入 current_price)
         """
         if stake_amount < self.MIN_STAKE:
             raise ValueError(f"Minimum stake is ${self.MIN_STAKE}")
@@ -139,6 +141,7 @@ class SignalBettingService:
             target_value=target_value,
             stake_amount=stake_amount,
             expires_at=expires_at,
+            created_price=current_price,  # 记录创建时价格
         )
         
         self.signals[signal_id] = signal
@@ -248,8 +251,15 @@ class SignalBettingService:
         elif signal.signal_type == SignalType.PRICE_BELOW:
             return price < signal.target_value
         elif signal.signal_type == SignalType.PRICE_CHANGE:
-            # TODO: 需要记录创建时的价格来计算涨跌幅
-            return False
+            # 计算涨跌幅
+            if signal.created_price <= 0:
+                return False
+            change_pct = (price - signal.created_price) / signal.created_price * 100
+            # target_value 是预测的涨跌幅百分比 (正数=涨，负数=跌)
+            if signal.target_value > 0:
+                return change_pct >= signal.target_value  # 预测涨，实际涨幅 >= 目标
+            else:
+                return change_pct <= signal.target_value  # 预测跌，实际跌幅 >= 目标
         return False
     
     def get_open_signals(self, asset: str = None) -> List[Signal]:
