@@ -113,10 +113,14 @@ class PriceFeed:
             if not self.session:
                 self.session = aiohttp.ClientSession()
             
-            # 优先使用 CoinGecko
-            prices = await self._fetch_coingecko()
+            # 优先使用 Hyperliquid (无频率限制)
+            prices = await self._fetch_hyperliquid()
             
-            # 如果 CoinGecko 失败，用默认价格
+            # 如果 Hyperliquid 失败，用 CoinGecko
+            if not prices:
+                prices = await self._fetch_coingecko()
+            
+            # 如果都失败，用默认价格
             if not prices:
                 prices = {
                     "BTC": Price(asset="BTC", price=73000, source="default"),
@@ -157,6 +161,10 @@ class PriceFeed:
         """从 CoinGecko 获取价格"""
         prices = {}
         
+        # 确保 session 存在
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+        
         ids = ["bitcoin", "ethereum", "solana"]
         url = f"{self.sources['coingecko']}/simple/price"
         params = {
@@ -183,6 +191,9 @@ class PriceFeed:
                                 volume_24h=d.get("usd_24h_vol", 0),
                                 source="coingecko",
                             )
+                    print(f"✅ Prices updated from CoinGecko: BTC=${prices.get('BTC', Price('BTC',0)).price:,.0f}")
+                else:
+                    print(f"⚠️ CoinGecko returned status {resp.status}")
         except Exception as e:
             print(f"⚠️ CoinGecko error: {e}")
             # 使用备用数据
@@ -190,8 +201,14 @@ class PriceFeed:
         
         return prices
     
-    async def _fetch_fallback(self, prices: Dict[str, Price]):
-        """备用价格源 (Hyperliquid)"""
+    async def _fetch_hyperliquid(self) -> Dict[str, Price]:
+        """主要价格源 (Hyperliquid - 无频率限制)"""
+        prices = {}
+        
+        # 确保 session 存在
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+        
         try:
             async with self.session.post(
                 self.sources["hyperliquid"],
@@ -208,8 +225,17 @@ class PriceFeed:
                                 price=float(data[symbol]),
                                 source="hyperliquid",
                             )
-        except:
-            pass
+                    
+                    if prices:
+                        print(f"✅ Prices from Hyperliquid: BTC=${prices.get('BTC', Price('BTC',0)).price:,.0f}")
+        except Exception as e:
+            print(f"⚠️ Hyperliquid error: {e}")
+        
+        return prices
+    
+    async def _fetch_fallback(self, prices: Dict[str, Price]):
+        """备用价格源"""
+        await self._fetch_hyperliquid()  # 不再需要，但保留兼容性
     
     async def get_price(self, asset: str) -> Optional[Price]:
         """获取单个资产价格"""

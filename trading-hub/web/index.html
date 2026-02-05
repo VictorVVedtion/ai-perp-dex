@@ -205,9 +205,11 @@
         try {
             const response = await fetch(`${API_BASE}/prices`);
             const data = await response.json();
-            document.getElementById('price-btc').textContent = `$${parseFloat(data.BTC || 0).toLocaleString()}`;
-            document.getElementById('price-eth').textContent = `$${parseFloat(data.ETH || 0).toLocaleString()}`;
-            document.getElementById('price-sol').textContent = `$${parseFloat(data.SOL || 0).toFixed(2)}`;
+            // 后端返回格式: {prices: {BTC: {price: xxx}, ...}}
+            const prices = data.prices || data;
+            document.getElementById('price-btc').textContent = `$${parseFloat(prices.BTC?.price || prices.BTC || 0).toLocaleString()}`;
+            document.getElementById('price-eth').textContent = `$${parseFloat(prices.ETH?.price || prices.ETH || 0).toLocaleString()}`;
+            document.getElementById('price-sol').textContent = `$${parseFloat(prices.SOL?.price || prices.SOL || 0).toFixed(2)}`;
         } catch (e) {
             console.error('Price fetch error:', e);
         }
@@ -220,7 +222,7 @@
             const data = await response.json();
             document.getElementById('stat-volume').textContent = `$${(data.total_volume || 0).toLocaleString()}`;
             document.getElementById('stat-agents').textContent = data.total_agents || 0;
-            document.getElementById('stat-rate').textContent = data.avg_internal_rate || '100%';
+            document.getElementById('stat-rate').textContent = data.internal_match_rate || data.avg_internal_rate || '100%';
         } catch (e) {
             console.error('Stats fetch error:', e);
         }
