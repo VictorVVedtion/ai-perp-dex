@@ -46,7 +46,7 @@ async function api(endpoint, options = {}) {
     ...options.headers,
   };
   
-  const res = await fetch(\`\${API_URL}\${endpoint}\`, {
+  const res = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers,
   });
@@ -148,9 +148,9 @@ program
     
     try {
       const [agent, balance, positions] = await Promise.all([
-        api(\`/agents/\${config.agentId}\`),
-        api(\`/balance/\${config.agentId}\`),
-        api(\`/positions/\${config.agentId}\`),
+        api(`/agents/${config.agentId}`),
+        api(`/balance/${config.agentId}`),
+        api(`/positions/${config.agentId}`),
       ]);
       
       spinner.stop();
@@ -195,7 +195,7 @@ program
     }
     
     try {
-      const balance = await api(\`/balance/\${config.agentId}\`);
+      const balance = await api(`/balance/${config.agentId}`);
       console.log(LOGO);
       console.log(chalk.bold('\\n💰 Balance\\n'));
       console.log(chalk.gray('Total:     ') + chalk.white('$' + balance.balance.toFixed(2)));
@@ -249,7 +249,7 @@ program
     }
     
     const assetSymbol = asset.toUpperCase() + (asset.includes('-') ? '' : '-PERP');
-    const spinner = ora(\`Opening long \${assetSymbol}...\`).start();
+    const spinner = ora(`Opening long ${assetSymbol}...`).start();
     
     try {
       const result = await api('/intents', {
@@ -300,7 +300,7 @@ program
     }
     
     const assetSymbol = asset.toUpperCase() + (asset.includes('-') ? '' : '-PERP');
-    const spinner = ora(\`Opening short \${assetSymbol}...\`).start();
+    const spinner = ora(`Opening short ${assetSymbol}...`).start();
     
     try {
       const result = await api('/intents', {
@@ -372,7 +372,7 @@ program
     }
     
     try {
-      const result = await api(\`/positions/\${config.agentId}\`);
+      const result = await api(`/positions/${config.agentId}`);
       console.log(LOGO);
       
       if (result.positions.length === 0) {
