@@ -149,6 +149,8 @@ class SettlementEngine:
     
     def deposit(self, agent_id: str, amount: float) -> AgentBalance:
         """入金"""
+        if amount <= 0:
+            raise ValueError(f"Deposit amount must be positive, got {amount}")
         balance = self.get_balance(agent_id)
         balance.balance_usdc += amount
         balance.total_deposited += amount

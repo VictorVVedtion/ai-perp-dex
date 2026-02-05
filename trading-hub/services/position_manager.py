@@ -139,6 +139,9 @@ class PositionManager:
     4. 风控告警
     """
     
+    # 支持的资产白名单
+    SUPPORTED_ASSETS = {"BTC-PERP", "ETH-PERP", "SOL-PERP"}
+    
     # 风控参数
     LIQUIDATION_WARNING_THRESHOLD = 0.5  # 亏损 50% 保证金时警告
     DAILY_LOSS_LIMIT_PCT = 0.1  # 每日最大亏损 10%
@@ -250,6 +253,14 @@ class PositionManager:
         
         自动设置默认止损止盈
         """
+        # 资产白名单验证
+        if asset not in self.SUPPORTED_ASSETS:
+            raise ValueError(f"Unsupported asset: {asset}. Supported: {self.SUPPORTED_ASSETS}")
+        
+        # 金额验证
+        if size_usdc <= 0:
+            raise ValueError(f"Position size must be positive, got {size_usdc}")
+        
         # 风控检查
         if size_usdc > self.MAX_POSITION_SIZE:
             raise ValueError(f"Position size exceeds limit: ${self.MAX_POSITION_SIZE}")
@@ -326,7 +337,18 @@ class PositionManager:
             raise ValueError("Position not found or already closed")
         
         pos.update_pnl(close_price)
-        asyncio.create_task(self._close_position(pos, "manual"))
+        
+        # 同步平仓 (不依赖事件循环)
+        pos.is_open = False
+        pos.closed_at = datetime.now()
+        pos.close_price = close_price
+        pos.realized_pnl = pos.unrealized_pnl
+        pos.close_reason = "manual"
+        
+        # 更新每日 PnL
+        agent_id = pos.agent_id
+        self.agent_daily_pnl[agent_id] = self.agent_daily_pnl.get(agent_id, 0) + pos.realized_pnl
+        
         return pos
     
     def set_stop_loss(self, position_id: str, price: float):

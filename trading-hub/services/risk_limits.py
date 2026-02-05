@@ -156,6 +156,18 @@ class RiskManager:
         if not limits.is_enabled:
             return True, []
         
+        # 0. 检查零/负金额
+        if size <= 0:
+            violations.append(self._create_violation(
+                agent_id,
+                "zero_size",
+                f"Trade size must be positive, got {size}",
+                RiskLevel.HIGH,
+                size,
+                0.01,  # 最小交易额
+            ))
+            return False, violations  # 立即返回，不检查其他
+        
         # 1. 检查仓位大小
         if size > limits.max_position_size:
             violations.append(self._create_violation(

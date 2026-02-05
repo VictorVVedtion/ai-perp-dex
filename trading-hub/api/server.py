@@ -23,12 +23,18 @@ from services.external_router import external_router, RoutingResult
 
 app = FastAPI(title="Trading Hub", version="0.1.0")
 
-# CORS
+# CORS - 限制允许的来源 (生产环境应更严格)
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",      # 本地前端
+    "http://localhost:8082",      # 本地 API
+    "https://ai-perp-dex.vercel.app",  # 生产前端
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -794,7 +800,13 @@ async def close_position(position_id: str):
             raise ValueError("Position not found")
         
         asset = pos.asset.replace("-PERP", "")
-        price = price_feed.get_price(asset)
+        price_data = await price_feed.get_price(asset)
+        if not price_data:
+            # Fallback to current position price
+            price = pos.current_price
+        else:
+            price = price_data.price
+        
         pos = position_manager.close_position_manual(position_id, price)
         
         return {
