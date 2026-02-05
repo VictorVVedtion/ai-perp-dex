@@ -1,4 +1,6 @@
-const API = 'http://localhost:8082';
+import { API_BASE_URL, ENDPOINTS } from './config';
+
+const API = API_BASE_URL;
 
 export interface Market { 
   symbol: string; 
