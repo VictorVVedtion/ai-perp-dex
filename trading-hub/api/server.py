@@ -201,7 +201,9 @@ class RegisterRequest(BaseModel):
     twitter_handle: Optional[str] = None
 
 
-VALID_ASSETS = [
+# 支持的交易对 - 从环境变量读取或使用默认值
+_assets_env = os.environ.get("VALID_ASSETS", "")
+VALID_ASSETS = _assets_env.split(",") if _assets_env else [
     "BTC-PERP", "ETH-PERP", "SOL-PERP",  # 主流
     "DOGE-PERP", "PEPE-PERP", "WIF-PERP",  # Meme
     "ARB-PERP", "OP-PERP", "SUI-PERP",  # L2
@@ -210,7 +212,7 @@ VALID_ASSETS = [
 
 class IntentRequest(BaseModel):
     agent_id: str
-    intent_type: str  # "long" | "short"
+    intent_type: str  # "long" | "short" - 会被验证转为 IntentType
     asset: str = "ETH-PERP"
     size_usdc: float = Field(default=100, gt=0, description="Size must be > 0")
     leverage: int = Field(default=1, ge=1, le=20, description="Leverage 1-20x (max 20x)")
@@ -229,6 +231,15 @@ class IntentRequest(BaseModel):
     def validate_size(cls, v):
         """确保金额精度 (最多 2 位小数)"""
         return round(float(v), 2)
+    
+    @field_validator('intent_type')
+    @classmethod
+    def validate_intent_type(cls, v):
+        """验证交易方向"""
+        valid = ['long', 'short']
+        if v.lower() not in valid:
+            raise ValueError(f"Invalid intent_type. Must be one of: {valid}")
+        return v.lower()
 
 class MatchRequest(BaseModel):
     intent_id: str
