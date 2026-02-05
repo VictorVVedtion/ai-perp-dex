@@ -373,3 +373,119 @@ class TestSecurity:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestSignalBettingEdgeCases:
+    """Signal Betting 边界测试"""
+    
+    @pytest.fixture
+    def agents_with_balance(self):
+        """创建两个有余额的 agents"""
+        agents = []
+        for i in range(2):
+            wallet = f"0xSB{i}{uuid.uuid4().hex[:6]}"
+            reg = requests.post(
+                f"{BASE_URL}/agents/register",
+                json={"display_name": f"SBTest{i}", "wallet_address": wallet}
+            ).json()
+            api_key = reg["api_key"]
+            agent_id = reg["agent"]["agent_id"]
+            
+            # Deposit
+            requests.post(
+                f"{BASE_URL}/deposit",
+                headers={"X-API-Key": api_key},
+                json={"agent_id": agent_id, "amount": 200}
+            )
+            agents.append({"agent_id": agent_id, "api_key": api_key})
+        return agents
+    
+    def test_signal_with_zero_stake(self, agents_with_balance):
+        """测试零押注应该失败"""
+        agent = agents_with_balance[0]
+        resp = requests.post(
+            f"{BASE_URL}/signals",
+            headers={"X-API-Key": agent["api_key"]},
+            json={
+                "agent_id": agent["agent_id"],
+                "asset": "BTC-PERP",
+                "signal_type": "price_above",
+                "target_value": 100000,
+                "confidence": 0.8,
+                "timeframe_hours": 24,
+                "stake_amount": 0,  # Zero stake
+                "rationale": "Should fail"
+            }
+        )
+        assert resp.status_code == 422  # Validation error
+    
+    def test_signal_stake_exceeds_balance(self, agents_with_balance):
+        """测试押注超过余额应该失败"""
+        agent = agents_with_balance[0]
+        resp = requests.post(
+            f"{BASE_URL}/signals",
+            headers={"X-API-Key": agent["api_key"]},
+            json={
+                "agent_id": agent["agent_id"],
+                "asset": "BTC-PERP",
+                "signal_type": "price_above",
+                "target_value": 100000,
+                "confidence": 0.8,
+                "timeframe_hours": 24,
+                "stake_amount": 9999,  # More than balance
+                "rationale": "Should fail"
+            }
+        )
+        assert resp.status_code in [400, 422]  # Validation or balance error
+    
+    def test_fade_nonexistent_signal(self, agents_with_balance):
+        """测试 fade 不存在的 signal"""
+        agent = agents_with_balance[0]
+        resp = requests.post(
+            f"{BASE_URL}/signals/fade",
+            headers={"X-API-Key": agent["api_key"]},
+            json={
+                "signal_id": "sig_nonexistent",
+                "fader_id": agent["agent_id"],
+                "stake": 10
+            }
+        )
+        assert resp.status_code in [400, 404]
+    
+    def test_double_fade_same_signal(self, agents_with_balance):
+        """测试同一个 signal 不能被 fade 两次"""
+        creator = agents_with_balance[0]
+        fader = agents_with_balance[1]
+        
+        # Create signal
+        sig_resp = requests.post(
+            f"{BASE_URL}/signals",
+            headers={"X-API-Key": creator["api_key"]},
+            json={
+                "agent_id": creator["agent_id"],
+                "asset": "ETH-PERP",
+                "signal_type": "price_below",
+                "target_value": 1500,
+                "confidence": 0.6,
+                "timeframe_hours": 12,
+                "stake_amount": 10,
+                "rationale": "Test double fade"
+            }
+        ).json()
+        signal_id = sig_resp["signal"]["signal_id"]
+        
+        # First fade - should succeed
+        resp1 = requests.post(
+            f"{BASE_URL}/signals/fade",
+            headers={"X-API-Key": fader["api_key"]},
+            json={"signal_id": signal_id, "fader_id": fader["agent_id"], "stake": 10}
+        )
+        assert resp1.status_code == 200
+        
+        # Second fade - should fail (already matched)
+        resp2 = requests.post(
+            f"{BASE_URL}/signals/fade",
+            headers={"X-API-Key": fader["api_key"]},
+            json={"signal_id": signal_id, "fader_id": fader["agent_id"], "stake": 10}
+        )
+        assert resp2.status_code == 400
