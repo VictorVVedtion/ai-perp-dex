@@ -2,9 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --background: #050505;
+  --teal: #00D4AA;
+  --orange: #FF6B35;
+  --zinc-dark: #121212;
+}
+
 body {
-  background: linear-gradient(180deg, #0a0a0a 0%, #141414 100%);
-  background-attachment: fixed;
+  background-color: var(--background);
+  color: white;
   min-height: 100vh;
 }
 
@@ -12,11 +19,33 @@ body {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  border-radius: 12px;
   transition: all 0.2s;
 }
 
 .glass-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.terminal-border {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.text-teal { color: var(--teal); }
+.bg-teal { background-color: var(--teal); }
+.border-teal { border-color: var(--teal); }
+
+.text-orange { color: var(--orange); }
+.bg-orange { background-color: var(--orange); }
+.border-orange { border-color: var(--orange); }
+
+/* Lobster mascot animation */
+@keyframes lobster-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.lobster-mascot {
+  animation: lobster-bob 3s ease-in-out infinite;
 }

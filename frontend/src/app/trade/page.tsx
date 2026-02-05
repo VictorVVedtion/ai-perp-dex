@@ -80,33 +80,8 @@ export default function TradePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-zinc-300 font-sans selection:bg-teal-500/30">
-      {/* Navbar */}
-      <nav className="h-14 border-b border-zinc-900 bg-[#050505]/80 backdrop-blur-md sticky top-0 z-50 flex items-center justify-between px-6">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl filter drop-shadow-[0_0_8px_rgba(255,107,53,0.5)]">🦞</span>
-          <span className="font-bold text-lg tracking-tight text-white">
-            Molt<span className="text-zinc-500 font-normal">Terminal</span>
-          </span>
-          <div className="h-4 w-[1px] bg-zinc-800 mx-2" />
-          <div className="flex gap-4 text-xs font-medium text-zinc-500">
-            <span className="text-white cursor-pointer hover:text-[#00D4AA] transition-colors">Trade</span>
-            <span className="cursor-pointer hover:text-white transition-colors">Portfolio</span>
-            <span className="cursor-pointer hover:text-white transition-colors">Leaderboard</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Available Balance</span>
-            <span className="font-mono text-[#00D4AA] font-medium">${balance.toLocaleString()}</span>
-          </div>
-          <div className="h-8 w-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-zinc-400">
-            AI
-          </div>
-        </div>
-      </nav>
-
-      <main className="max-w-[1600px] mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="bg-[#050505] text-zinc-300 font-sans selection:bg-teal-500/30">
+      <main className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left Column: Market Info & Chart Placeholder */}
         <div className="lg:col-span-8 flex flex-col gap-6">

@@ -7,45 +7,64 @@ export const metadata = {
 
 export default function TerminalPage() {
   return (
-    <div className="min-h-screen py-12 px-4">
+    <div className="space-y-12">
       {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold mb-3">
-          <span className="bg-gradient-to-r from-cyan-400 to-green-400 bg-clip-text text-transparent">
-            🖥️ Intent Terminal
-          </span>
-        </h1>
-        <p className="text-zinc-400 max-w-md mx-auto">
-          用自然语言交易。告诉 AI 你想做什么，它会帮你执行。
-        </p>
+      <div className="flex flex-col items-center text-center space-y-4">
+        <div className="w-20 h-20 rounded-2xl bg-[#00D4AA]/10 border border-[#00D4AA]/20 flex items-center justify-center text-5xl lobster-mascot">
+          🦞
+        </div>
+        <div>
+          <h1 className="text-4xl font-bold tracking-tight">
+            Intent <span className="text-[#00D4AA]">Terminal</span>
+          </h1>
+          <p className="text-zinc-500 mt-2 max-w-md mx-auto">
+            Execute complex perpetual trades using natural language. The bridge between human intent and autonomous execution.
+          </p>
+        </div>
       </div>
 
-      {/* Terminal */}
-      <IntentTerminal />
+      {/* Terminal Container */}
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-[#121212] rounded-xl border border-white/10 overflow-hidden shadow-2xl">
+          <div className="bg-white/5 px-4 py-2 border-b border-white/10 flex items-center justify-between">
+            <div className="flex gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-red-500/50"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500/50"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500/50"></div>
+            </div>
+            <div className="text-[10px] font-mono text-zinc-500 tracking-widest uppercase">
+              Agent-Terminal-Session-v1.0.42
+            </div>
+            <div className="w-12"></div>
+          </div>
+          <div className="p-2">
+            <IntentTerminal />
+          </div>
+        </div>
+      </div>
 
       {/* Features */}
-      <div className="max-w-3xl mx-auto mt-12 grid md:grid-cols-3 gap-6">
-        <div className="glass-card p-5 text-center">
-          <div className="text-3xl mb-3">🗣️</div>
-          <h3 className="font-semibold mb-2">自然语言</h3>
-          <p className="text-sm text-zinc-500">
-            用中文或英文描述你的交易意图
-          </p>
-        </div>
-        <div className="glass-card p-5 text-center">
-          <div className="text-3xl mb-3">⚡</div>
-          <h3 className="font-semibold mb-2">即时执行</h3>
-          <p className="text-sm text-zinc-500">
-            AI 理解你的命令并立即提交订单
-          </p>
-        </div>
-        <div className="glass-card p-5 text-center">
-          <div className="text-3xl mb-3">🔔</div>
-          <h3 className="font-semibold mb-2">智能提醒</h3>
-          <p className="text-sm text-zinc-500">
-            设置价格提醒，让 AI 帮你盯盘
-          </p>
-        </div>
+      <div className="max-w-4xl mx-auto grid md:grid-cols-3 gap-6">
+        {[
+          { icon: '💬', title: 'Natural Language', desc: 'Describe your trade in plain English or Chinese. "Long BTC 10x with $1000".' },
+          { icon: '⚡', title: 'Instant Execution', desc: 'Proprietary intent-matching engine executes your order across multiple liquidity sources.' },
+          { icon: '🛡️', title: 'Risk Guard', desc: 'AI automatically calculates liquidation points and suggests optimal leverage based on volatility.' },
+        ].map((f) => (
+          <div key={f.title} className="glass-card p-6 border-b-2 border-b-transparent hover:border-b-[#00D4AA] transition-all">
+            <div className="text-3xl mb-4">{f.icon}</div>
+            <h3 className="font-bold mb-2">{f.title}</h3>
+            <p className="text-sm text-zinc-500 leading-relaxed">
+              {f.desc}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="max-w-2xl mx-auto p-8 rounded-2xl bg-[#00D4AA]/5 border border-[#00D4AA]/10 text-center">
+        <h3 className="text-[#00D4AA] font-bold mb-2">Pro Tip</h3>
+        <p className="text-sm text-zinc-400 italic">
+          "Try saying: 'Show me my current PnL and close all positions if BTC drops below 82k' to set up autonomous safeguards."
+        </p>
       </div>
     </div>
   );
