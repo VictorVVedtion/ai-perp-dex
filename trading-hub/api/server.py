@@ -53,6 +53,85 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === P0 修复: 并发限流 ===
+from collections import defaultdict
+import time
+
+class RateLimiter:
+    """简单的内存限流器"""
+    def __init__(self, per_agent_limit: int = 10, global_limit: int = 500, window_seconds: int = 1):
+        self.per_agent_limit = per_agent_limit  # 每 Agent 每秒请求数
+        self.global_limit = global_limit  # 全局每秒请求数
+        self.window = window_seconds
+        self.agent_requests: Dict[str, List[float]] = defaultdict(list)
+        self.global_requests: List[float] = []
+    
+    def _cleanup(self, requests: List[float], now: float) -> List[float]:
+        """清理过期请求"""
+        cutoff = now - self.window
+        return [t for t in requests if t > cutoff]
+    
+    def check(self, agent_id: str = None) -> tuple[bool, str]:
+        """检查是否允许请求"""
+        now = time.time()
+        
+        # 全局限流
+        self.global_requests = self._cleanup(self.global_requests, now)
+        if len(self.global_requests) >= self.global_limit:
+            return False, f"Global rate limit exceeded: {self.global_limit}/s"
+        
+        # Agent 限流
+        if agent_id:
+            self.agent_requests[agent_id] = self._cleanup(self.agent_requests[agent_id], now)
+            if len(self.agent_requests[agent_id]) >= self.per_agent_limit:
+                return False, f"Agent rate limit exceeded: {self.per_agent_limit}/s"
+            self.agent_requests[agent_id].append(now)
+        
+        self.global_requests.append(now)
+        return True, ""
+
+rate_limiter = RateLimiter(per_agent_limit=10, global_limit=500)
+
+# === 并发连接限制 ===
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+import threading
+
+class ConcurrencyLimiter:
+    """并发连接限制器"""
+    def __init__(self, max_concurrent: int = 100):
+        self.max_concurrent = max_concurrent
+        self.current = 0
+        self.lock = threading.Lock()
+    
+    def acquire(self) -> bool:
+        with self.lock:
+            if self.current >= self.max_concurrent:
+                return False
+            self.current += 1
+            return True
+    
+    def release(self):
+        with self.lock:
+            self.current = max(0, self.current - 1)
+
+concurrency_limiter = ConcurrencyLimiter(max_concurrent=100)
+
+class ConcurrencyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if not concurrency_limiter.acquire():
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Server too busy", "detail": "Max concurrent requests reached"}
+            )
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            concurrency_limiter.release()
+
+app.add_middleware(ConcurrencyMiddleware)
+
 # WebSocket 连接管理
 class ConnectionManager:
     def __init__(self):
@@ -331,6 +410,11 @@ async def create_intent(
     # 验证: Agent 只能为自己创建 Intent
     if auth.agent_id != req.agent_id:
         raise ForbiddenError("Cannot create intent for another agent")
+    
+    # P0 修复: 限流检查
+    allowed, msg = rate_limiter.check(req.agent_id)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=msg)
     
     intent_type = IntentType(req.intent_type)
     
@@ -1169,7 +1253,11 @@ async def deposit(
         raise ForbiddenError("Cannot deposit for another agent")
     
     balance = settlement_engine.deposit(auth.agent_id, req.amount)
-    return {"success": True, "balance": balance.to_dict()}
+    
+    # 同步余额到 position_manager (用于保证金检查)
+    position_manager.agent_balances[auth.agent_id] = balance.available
+    
+    return {"success": True, "new_balance": balance.available, "balance": balance.to_dict()}
 
 @app.post("/withdraw")
 async def withdraw(
@@ -1236,12 +1324,12 @@ async def get_settlement_stats():
 # Rate Limiting API
 # ==========================================
 
-from services.rate_limiter import rate_limiter
+from services.rate_limiter import rate_limiter as service_rate_limiter
 
 @app.get("/rate-limit/{agent_id}")
 async def get_rate_limit_status(agent_id: str):
     """获取限流状态"""
-    return rate_limiter.get_status(agent_id)
+    return service_rate_limiter.get_status(agent_id)
 
 
 # ==========================================

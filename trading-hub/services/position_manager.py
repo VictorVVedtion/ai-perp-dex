@@ -276,8 +276,42 @@ class PositionManager:
         if daily_pnl < -balance * self.DAILY_LOSS_LIMIT_PCT:
             raise ValueError(f"Daily loss limit reached: ${daily_pnl:.2f}")
         
-        position_id = f"pos_{uuid.uuid4().hex[:12]}"
+        # === P0 修复: 保证金检查 ===
+        required_margin = size_usdc / leverage
+        available_balance = self.agent_balances.get(agent_id, 0)
+        
+        # 计算已用保证金
+        used_margin = 0
+        for pos in self.positions.values():
+            if pos.agent_id == agent_id and pos.is_open:
+                used_margin += pos.size_usdc / pos.leverage
+        
+        free_margin = available_balance - used_margin
+        if required_margin > free_margin:
+            raise ValueError(
+                f"Insufficient margin: need ${required_margin:.2f}, "
+                f"available ${free_margin:.2f} (balance ${available_balance:.2f}, used ${used_margin:.2f})"
+            )
+        
+        # 最大敞口限制 (不超过余额的 10 倍)
+        total_exposure = used_margin * leverage + size_usdc
+        max_exposure = available_balance * 10
+        if total_exposure > max_exposure:
+            raise ValueError(
+                f"Total exposure ${total_exposure:.2f} exceeds limit ${max_exposure:.2f} (10x balance)"
+            )
+        
+        # === P0 修复: 禁止同资产对冲 ===
         position_side = PositionSide.LONG if side == "long" else PositionSide.SHORT
+        for pos in self.positions.values():
+            if pos.agent_id == agent_id and pos.asset == asset and pos.is_open:
+                if pos.side != position_side:
+                    raise ValueError(
+                        f"Cannot hedge: already have {pos.side.value.upper()} position on {asset}. "
+                        f"Close existing position first."
+                    )
+        
+        position_id = f"pos_{uuid.uuid4().hex[:12]}"
         
         # 自动设置止损止盈 (如果未指定)
         if stop_loss is None:
