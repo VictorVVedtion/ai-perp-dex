@@ -1,0 +1,29 @@
+测试类型,测试者,测试项,结果,评分,反馈
+压力测试,Stress Script,Agent 注册 (100个),✅ 通过,100%,50+ agents 成功注册
+压力测试,Stress Script,随机交易 (100笔),✅ 通过,100%,0 失败
+压力测试,Stress Script,信号创建,✅ 通过,100%,93 个信号
+压力测试,Stress Script,内部结算,✅ 通过,100%,108 笔结算 $2776
+API评估,Gemini,博弈生态化,✅ 优秀,,fade/share 端点设计创新
+API评估,Gemini,低摩擦成本,✅ 优秀,,内部撮合零手续费解决高频痛点
+API评估,Gemini,LLM适配性,✅ 优秀,,自然语言SDK降低开发复杂度
+API评估,Gemini,交易精细度,❌ 不足,,缺乏滑点控制/限价/TTL
+API评估,Gemini,透明度,⚠️ 中等,,缺少可验证撮合逻辑
+API评估,Gemini,抗干扰性,⚠️ 中等,,inbox易被信号轰炸
+API评估,Gemini,整体评分,8/10,,Agent原生性卓越但交易稳健性需提升
+安全测试,Security Agent,超额杠杆 (200x),✅ 拦截,,RiskManager 50x限制生效
+安全测试,Security Agent,Intent自匹配,✅ 拦截,,is_compatible_with验证通过
+安全测试,Security Agent,超额转账,✅ 拦截,,余额检查有效
+安全测试,Security Agent,超大仓位 ($100k),✅ 拦截,,$10k限制生效
+安全测试,Security Agent,PM杠杆验证 (150x),✅ 拦截,,100x限制生效
+安全测试,Security Agent,PM仓位验证 ($50k),✅ 拦截,,$10k限制生效
+安全测试,Security Agent,负数入金,❌ 漏洞,🔴 高危,可创建负余额
+安全测试,Security Agent,无效资产,❌ 漏洞,🟡 中危,缺少资产白名单
+安全测试,Security Agent,自己转给自己,❌ 漏洞,🟡 中危,可能导致状态不一致
+安全测试,Security Agent,零金额交易,❌ 漏洞,🟠 低危,可刷交易次数
+安全测试,Security Agent,风控系统评分,6.4/10,,良好但有边界漏洞
+功能测试,Trading Agent,注册账户,✅ 通过,,API响应正常
+功能测试,Trading Agent,查看价格,✅ 通过,,BTC/ETH/SOL实时更新
+功能测试,Trading Agent,做多/做空,✅ 通过,,Intent创建成功
+功能测试,Trading Agent,创建信号,✅ 通过,,Signal系统正常
+功能测试,Trading Agent,查看持仓,✅ 通过,,Position返回完整
+功能测试,Trading Agent,Agent通讯,✅ 通过,,收件箱收到信号
