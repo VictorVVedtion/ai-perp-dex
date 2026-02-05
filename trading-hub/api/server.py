@@ -18,6 +18,7 @@ sys.path.append('..')
 from db.store import store
 from api.models import IntentType, IntentStatus, AgentStatus
 from services.price_feed import PriceFeed, price_feed
+from services.pnl_tracker import pnl_tracker
 
 app = FastAPI(title="Trading Hub", version="0.1.0")
 
@@ -145,6 +146,24 @@ async def list_agents(limit: int = 50, offset: int = 0):
 async def get_leaderboard(limit: int = 20):
     agents = store.get_leaderboard(limit)
     return {"leaderboard": [a.to_dict() for a in agents]}
+
+# --- PnL ---
+
+@app.get("/pnl/{agent_id}")
+async def get_agent_pnl(agent_id: str):
+    """获取 Agent 的实时盈亏"""
+    agent = store.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    pnl = await pnl_tracker.get_agent_pnl(agent_id)
+    return pnl.to_dict()
+
+@app.get("/pnl-leaderboard")
+async def get_pnl_leaderboard(limit: int = 20):
+    """获取按 PnL 排序的排行榜"""
+    leaderboard = await pnl_tracker.get_leaderboard_with_pnl(limit)
+    return {"leaderboard": leaderboard}
 
 # --- Intent ---
 
