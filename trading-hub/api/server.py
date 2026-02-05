@@ -92,6 +92,7 @@ class IntentRequest(BaseModel):
     size_usdc: float = Field(default=100, gt=0, description="Size must be > 0")
     leverage: int = Field(default=1, ge=1, le=100, description="Leverage 1-100x")
     max_slippage: float = 0.005
+    reason: str = ""  # AI 推理理由 (Agent Thoughts)
     
     @field_validator('asset')
     @classmethod
@@ -282,6 +283,32 @@ async def get_pnl_leaderboard(limit: int = 20):
     leaderboard = await pnl_tracker.get_leaderboard_with_pnl(limit)
     return {"leaderboard": leaderboard}
 
+# --- Agent Thoughts (AI 推理过程) ---
+
+# 存储最近的 Agent Thoughts
+agent_thoughts: Dict[str, list] = {}
+
+@app.get("/agents/{agent_id}/thoughts")
+async def get_agent_thoughts(agent_id: str, limit: int = 10):
+    """获取 Agent 的最近思考/交易理由"""
+    thoughts = agent_thoughts.get(agent_id, [])[-limit:]
+    return {
+        "agent_id": agent_id,
+        "thoughts": thoughts
+    }
+
+@app.get("/thoughts/feed")
+async def get_thoughts_feed(limit: int = 20):
+    """获取全平台的 Agent Thoughts Feed"""
+    all_thoughts = []
+    for agent_id, thoughts in agent_thoughts.items():
+        for t in thoughts[-5:]:  # 每个 agent 最多 5 条
+            all_thoughts.append({**t, "agent_id": agent_id})
+    
+    # 按时间排序
+    all_thoughts.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    return {"thoughts": all_thoughts[:limit]}
+
 # --- Intent ---
 
 @app.post("/intents")
@@ -402,6 +429,32 @@ async def create_intent(
             position_data = {"error": str(e)}
     else:
         position_data = None
+    
+    # === 保存 Agent Thought ===
+    if req.reason:
+        if req.agent_id not in agent_thoughts:
+            agent_thoughts[req.agent_id] = []
+        agent_thoughts[req.agent_id].append({
+            "type": "trade",
+            "action": f"{req.intent_type.upper()} {req.asset}",
+            "size": req.size_usdc,
+            "leverage": req.leverage,
+            "reason": req.reason,
+            "timestamp": datetime.now().isoformat(),
+            "intent_id": intent.intent_id,
+        })
+        # 保持最近 50 条
+        agent_thoughts[req.agent_id] = agent_thoughts[req.agent_id][-50:]
+        
+        # 广播 thought
+        await manager.broadcast({
+            "type": "agent_thought",
+            "data": {
+                "agent_id": req.agent_id,
+                "action": f"{req.intent_type.upper()} {req.asset} ${req.size_usdc}",
+                "reason": req.reason,
+            }
+        })
     
     return {
         "success": True,

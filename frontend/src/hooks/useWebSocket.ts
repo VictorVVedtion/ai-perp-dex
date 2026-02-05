@@ -186,6 +186,7 @@ function parseRequest(r: any): TradeRequest {
     side: (r.side?.toUpperCase() || 'LONG') as 'LONG' | 'SHORT',
     size: r.size_usdc || r.size || 0,
     leverage: r.leverage || 1,
+    reason: r.reason || r.rationale || undefined,
   };
 }
 

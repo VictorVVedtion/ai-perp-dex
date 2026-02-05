@@ -15,6 +15,7 @@ export interface TradeRequest {
   side: 'LONG' | 'SHORT'; 
   size: number; 
   leverage: number;
+  reason?: string;  // Agent's trading rationale
 }
 
 function extract(r: any) { 
@@ -51,6 +52,7 @@ export async function getRequests(): Promise<TradeRequest[]> {
       side: x.side?.toUpperCase() as 'LONG' | 'SHORT',
       size: x.size_usdc || x.size,
       leverage: x.leverage,
+      reason: x.reason || x.rationale || undefined,
     }));
   } catch { 
     return getMockRequests(); 
@@ -68,12 +70,34 @@ function getMockMarkets(): Market[] {
 function getMockRequests(): TradeRequest[] {
   const agents = ['AlphaBot', 'QuantAI', 'SmartTrader', 'DegenAgent', 'MM_Prime'];
   const markets = ['BTC-PERP', 'ETH-PERP', 'SOL-PERP'];
-  return Array.from({ length: 5 }, (_, i) => ({
-    id: `req_${Math.random().toString(36).slice(2, 10)}`,
-    agentId: agents[i % agents.length],
-    market: markets[i % markets.length],
-    side: (Math.random() > 0.5 ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
-    size: Math.floor(Math.random() * 2000 + 200),
-    leverage: [5, 10, 20][Math.floor(Math.random() * 3)],
-  }));
+  const reasons: Record<string, string[]> = {
+    'BTC-PERP': [
+      'BTC 在 84k 形成强支撑，RSI 超卖反弹信号',
+      '链上数据显示交易所流出量激增，看涨',
+      'ETF 资金持续流入，突破 85k 概率高',
+    ],
+    'ETH-PERP': [
+      'ETH/BTC 比价触底反弹，补涨行情启动',
+      'L2 TVL 创新高，生态利好推动上涨',
+      'Gas 费用下降刺激链上活动，看好短期',
+    ],
+    'SOL-PERP': [
+      'SOL 在 $130 有强支撑，上行空间大',
+      'Meme 季 SOL 生态受益，交易量暴涨',
+      '机构持仓增加，技术面突破在即',
+    ],
+  };
+  return Array.from({ length: 5 }, (_, i) => {
+    const market = markets[i % markets.length];
+    const marketReasons = reasons[market] || reasons['BTC-PERP'];
+    return {
+      id: `req_${Math.random().toString(36).slice(2, 10)}`,
+      agentId: agents[i % agents.length],
+      market,
+      side: (Math.random() > 0.5 ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
+      size: Math.floor(Math.random() * 2000 + 200),
+      leverage: [5, 10, 20][Math.floor(Math.random() * 3)],
+      reason: marketReasons[Math.floor(Math.random() * marketReasons.length)],
+    };
+  });
 }
