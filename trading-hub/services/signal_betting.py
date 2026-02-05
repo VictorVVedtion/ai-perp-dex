@@ -312,5 +312,57 @@ class SignalBettingService:
         }
 
 
+    async def auto_settle_expired(self) -> List[Bet]:
+        """
+        自动结算所有到期的 Bets
+        
+        应该由后台任务定期调用
+        """
+        now = datetime.now()
+        settled = []
+        
+        for bet in list(self.bets.values()):
+            if bet.status != "pending":
+                continue
+            
+            if now >= bet.expires_at:
+                try:
+                    # 尝试获取价格并结算
+                    settled_bet = await self.settle_bet(bet.bet_id)
+                    settled.append(settled_bet)
+                    print(f"✅ Auto-settled bet {bet.bet_id}: winner={settled_bet.winner_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to settle bet {bet.bet_id}: {e}")
+        
+        return settled
+    
+    async def _settlement_loop(self):
+        """后台结算循环"""
+        while True:
+            try:
+                await asyncio.sleep(60)  # 每分钟检查一次
+                settled = await self.auto_settle_expired()
+                if settled:
+                    print(f"🎯 Auto-settled {len(settled)} bets")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"⚠️ Settlement loop error: {e}")
+    
+    async def start_auto_settlement(self):
+        """启动自动结算"""
+        self._settlement_task = asyncio.create_task(self._settlement_loop())
+        print("🎯 Signal Betting auto-settlement started")
+    
+    async def stop_auto_settlement(self):
+        """停止自动结算"""
+        if hasattr(self, '_settlement_task'):
+            self._settlement_task.cancel()
+            try:
+                await self._settlement_task
+            except asyncio.CancelledError:
+                pass
+
+
 # 单例
 signal_betting = SignalBettingService()

@@ -1616,6 +1616,17 @@ async def startup_risk():
     risk_manager.position_manager = position_manager
     risk_manager.settlement_engine = settlement_engine
 
+@app.on_event("startup")
+async def startup_signal_betting():
+    """启动 Signal Betting 自动结算"""
+    signal_betting.price_feed = price_feed
+    await signal_betting.start_auto_settlement()
+
+@app.on_event("shutdown")
+async def shutdown_signal_betting():
+    """停止 Signal Betting 自动结算"""
+    await signal_betting.stop_auto_settlement()
+
 @app.get("/risk/{agent_id}")
 async def get_risk_score(agent_id: str):
     """获取风险评分"""
