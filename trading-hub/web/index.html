@@ -38,7 +38,7 @@
     <!-- Main Content -->
     <main class="container mx-auto p-4">
         <!-- Stats Bar -->
-        <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-5 gap-4 mb-6">
             <div class="bg-gray-800 rounded-lg p-4">
                 <div class="text-gray-400 text-sm">Total Agents</div>
                 <div id="stat-agents" class="text-2xl font-bold">0</div>
@@ -54,6 +54,26 @@
             <div class="bg-gray-800 rounded-lg p-4">
                 <div class="text-gray-400 text-sm">Volume (USDC)</div>
                 <div id="stat-volume" class="text-2xl font-bold">$0</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">BTC Price</div>
+                <div id="stat-btc" class="text-2xl font-bold text-yellow-400">$0</div>
+            </div>
+        </div>
+        
+        <!-- Price Ticker -->
+        <div class="bg-gray-800 rounded-lg p-3 mb-6 flex justify-center space-x-8">
+            <div class="text-center">
+                <span class="text-gray-400 text-sm">BTC</span>
+                <span id="price-btc" class="ml-2 font-mono">-</span>
+            </div>
+            <div class="text-center">
+                <span class="text-gray-400 text-sm">ETH</span>
+                <span id="price-eth" class="ml-2 font-mono">-</span>
+            </div>
+            <div class="text-center">
+                <span class="text-gray-400 text-sm">SOL</span>
+                <span id="price-sol" class="ml-2 font-mono">-</span>
             </div>
         </div>
 
@@ -208,6 +228,10 @@
                     loadStats();
                     loadLeaderboard();
                     break;
+                case 'pnl_update':
+                    console.log('PnL Update:', message.data);
+                    // 可以在这里更新特定 Agent 的 PnL 显示
+                    break;
             }
         }
 
@@ -219,6 +243,29 @@
             document.getElementById('stat-intents').textContent = data.open_intents;
             document.getElementById('stat-matches').textContent = data.total_matches;
             document.getElementById('stat-volume').textContent = `$${data.total_volume.toLocaleString()}`;
+        }
+        
+        async function loadPrices() {
+            try {
+                const resp = await fetch(`${API_URL}/prices`);
+                const data = await resp.json();
+                
+                if (data.prices.BTC) {
+                    const btc = data.prices.BTC;
+                    document.getElementById('stat-btc').textContent = `$${btc.price.toLocaleString()}`;
+                    document.getElementById('price-btc').innerHTML = `$${btc.price.toLocaleString()} <span class="${btc.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}">(${btc.change_24h >= 0 ? '+' : ''}${btc.change_24h.toFixed(2)}%)</span>`;
+                }
+                if (data.prices.ETH) {
+                    const eth = data.prices.ETH;
+                    document.getElementById('price-eth').innerHTML = `$${eth.price.toLocaleString()} <span class="${eth.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}">(${eth.change_24h >= 0 ? '+' : ''}${eth.change_24h.toFixed(2)}%)</span>`;
+                }
+                if (data.prices.SOL) {
+                    const sol = data.prices.SOL;
+                    document.getElementById('price-sol').innerHTML = `$${sol.price.toLocaleString()} <span class="${sol.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}">(${sol.change_24h >= 0 ? '+' : ''}${sol.change_24h.toFixed(2)}%)</span>`;
+                }
+            } catch (e) {
+                console.log('Price fetch error:', e);
+            }
         }
 
         async function loadIntents() {
@@ -419,12 +466,14 @@
         document.addEventListener('DOMContentLoaded', () => {
             connectWebSocket();
             loadStats();
+            loadPrices();
             loadIntents();
             loadMatches();
             loadLeaderboard();
             
             // Auto refresh
             setInterval(loadStats, 10000);
+            setInterval(loadPrices, 30000);  // 价格每 30 秒刷新
         });
     </script>
 </body>

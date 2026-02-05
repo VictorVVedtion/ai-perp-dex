@@ -76,6 +76,26 @@ class MatchRequest(BaseModel):
 async def startup():
     """启动时初始化价格源"""
     await price_feed.start()
+    
+    # 注册价格更新回调 - 广播 PnL 更新
+    @price_feed.on_price_update
+    async def broadcast_pnl_updates(price):
+        if not manager.active_connections:
+            return
+        
+        # 获取有持仓的 Agent
+        for agent in store.list_agents(limit=100):
+            pnl = await pnl_tracker.get_agent_pnl(agent.agent_id)
+            if pnl.positions:
+                await manager.broadcast({
+                    "type": "pnl_update",
+                    "data": {
+                        "agent_id": agent.agent_id,
+                        "total_pnl": pnl.total_pnl,
+                        "total_exposure": pnl.total_exposure,
+                        "positions": len(pnl.positions),
+                    }
+                })
 
 @app.on_event("shutdown")
 async def shutdown():
