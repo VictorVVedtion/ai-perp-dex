@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Market, TradeRequest } from '@/lib/api';
 
-const WS_URL = 'ws://localhost:8080/ws';
+const WS_URL = 'ws://localhost:8082/ws';
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 

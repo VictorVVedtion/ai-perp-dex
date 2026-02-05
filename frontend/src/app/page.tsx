@@ -1,4 +1,4 @@
-import { getMarkets, getRequests } from '@/lib/api';
+import { getMarkets, getRequests, getAgents, getSignals } from '@/lib/api';
 import LiveDashboard from './components/LiveDashboard';
 import Link from 'next/link';
 
@@ -7,6 +7,14 @@ export const dynamic = 'force-dynamic';
 export default async function Home() {
   const markets = await getMarkets();
   const requests = await getRequests();
+  const agents = await getAgents();
+  const signals = await getSignals();
+
+  // Top 3 agents by PnL
+  const topAgents = [...agents].sort((a, b) => b.pnl - a.pnl).slice(0, 3);
+  
+  // Top 3 active signals
+  const activeSignals = signals.filter(s => s.status === 'ACTIVE').slice(0, 3);
 
   return (
     <div className="space-y-10">
@@ -67,18 +75,14 @@ export default async function Home() {
             <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">Top Agents</h2>
           </div>
           <div className="grid gap-3">
-            {[
-              { name: 'AlphaBot', pnl: 42300, winRate: '68%', color: '#00D4AA' },
-              { name: 'QuantAI', pnl: 28150, winRate: '62%', color: '#FF6B35' },
-              { name: 'MM_Prime', pnl: 19400, winRate: '71%', color: '#9333EA' },
-            ].map((agent, i) => (
-              <Link href={`/agents/${agent.name}`} key={agent.name} className="glass-card p-4 flex items-center gap-4 group">
+            {topAgents.map((agent, i) => (
+              <Link href={`/agents/${agent.id}`} key={agent.id} className="glass-card p-4 flex items-center gap-4 group">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl bg-white/5 group-hover:bg-white/10 transition-colors">
                   {i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{agent.name}</div>
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-tighter">Win Rate: {agent.winRate}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-tighter">Win Rate: {(agent.winRate * 100).toFixed(0)}%</div>
                 </div>
                 <div className="text-right">
                   <div className="text-sm font-bold text-green-400 font-mono">+${(agent.pnl/1000).toFixed(1)}k</div>
@@ -118,20 +122,16 @@ export default async function Home() {
         </div>
         
         <div className="grid md:grid-cols-3 gap-6">
-          {[
-            { target: 'BTC Price > $90k', deadline: '24h', pool: '$12,400', odds: '2.4x', icon: '🚀' },
-            { target: 'ETH Flipping BTC Vol', deadline: '3d', pool: '$8,200', odds: '5.1x', icon: '💎' },
-            { target: 'SOL hitting $150', deadline: '12h', pool: '$45,000', odds: '1.8x', icon: '🔥' },
-          ].map((signal) => (
-            <div key={signal.target} className="glass-card p-6 relative overflow-hidden group border-l-4 border-l-[#FF6B35]">
+          {activeSignals.map((signal) => (
+            <div key={signal.id} className="glass-card p-6 relative overflow-hidden group border-l-4 border-l-[#FF6B35]">
               <div className="flex justify-between items-start mb-4">
-                <span className="text-3xl">{signal.icon}</span>
-                <span className="text-xs font-mono text-zinc-500">ENDS IN {signal.deadline}</span>
+                <span className="text-3xl">🚀</span>
+                <span className="text-xs font-mono text-zinc-500">ENDS IN {new Date(signal.deadline).toLocaleDateString()}</span>
               </div>
               <h3 className="text-lg font-bold mb-1">{signal.target}</h3>
-              <p className="text-zinc-500 text-sm mb-4">Signal Pool: <span className="text-white">{signal.pool}</span></p>
+              <p className="text-zinc-500 text-sm mb-4">Signal Pool: <span className="text-white">${signal.pool.toLocaleString()}</span></p>
               <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                <span className="text-[#FF6B35] font-bold font-mono">{signal.odds} Odds</span>
+                <span className="text-[#FF6B35] font-bold font-mono">{signal.odds}x Odds</span>
                 <button className="text-xs font-bold bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded transition-colors">
                   Place Bet
                 </button>
