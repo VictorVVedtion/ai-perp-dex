@@ -1,11 +1,22 @@
-"""High-level Trading Agent interface"""
+"""High-level Trading Agent interface (Legacy Trade Router)
+
+DEPRECATED: 此模块是 Trade Router 时代的遗留接口。
+生产环境请使用: from ai_perp_dex import TradingHub
+"""
 
 import asyncio
+import warnings
 from typing import Optional, List, Callable, Any
 from datetime import datetime, timedelta
 
-from .client import Client
-from .types import Side, Market, TradeRequest, Quote, Position, WebSocketMessage
+try:
+    from .types import Side, Market, TradeRequest, Quote, Position, WebSocketMessage
+except ImportError:
+    Side = Market = TradeRequest = Quote = Position = WebSocketMessage = None
+
+# Legacy: TradingAgent 依赖的 Client 类不再存在
+# 使用 TradingHub 代替
+Client = None
 
 
 class TradingAgent:
@@ -32,10 +43,16 @@ class TradingAgent:
         router_url: str = "http://localhost:8080",
         private_key: Optional[str] = None,  # For future signing
     ):
+        warnings.warn(
+            "TradingAgent is deprecated. Use TradingHub instead: "
+            "from ai_perp_dex import TradingHub",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.agent_id = agent_id
         self.private_key = private_key
-        self._client = Client(base_url=router_url, agent_id=agent_id)
-        self._quote_handlers: List[Callable[[TradeRequest, List[Quote]], Any]] = []
+        self._client = None  # Legacy Client removed
+        self._quote_handlers: List[Callable] = []
     
     async def connect(self):
         """Connect to the Trade Router"""
@@ -102,7 +119,7 @@ class TradingAgent:
         Args:
             market: Market symbol (e.g., "BTC-PERP")
             size: Position size in USDC
-            leverage: Leverage multiplier (1-50)
+            leverage: Leverage multiplier (1-20)
             max_slippage_bps: Maximum slippage in basis points
             wait_for_fill: Wait for the position to be filled
             timeout: Timeout in seconds
@@ -207,9 +224,13 @@ class TradingAgent:
         return None
     
     async def close(self, position_id: str) -> dict:
-        """Close a position"""
+        """Close a position
+
+        Returns:
+            Close result with PnL info and full position data
+        """
         return await self._client.close_position(position_id)
-    
+
     async def close_all(self) -> List[dict]:
         """Close all positions"""
         positions = await self.get_positions()
@@ -218,32 +239,20 @@ class TradingAgent:
             result = await self.close(p.id)
             results.append(result)
         return results
-    
+
     # ========== PnL ==========
-    
+
     async def get_total_pnl(self) -> float:
         """Get total unrealized PnL across all positions"""
         positions = await self.get_positions()
         return sum(p.unrealized_pnl for p in positions)
-    
+
     # ========== Event Handlers ==========
-    
+
     def on_quote(self, handler: Callable):
         """Register handler for incoming quotes"""
         self._quote_handlers.append(handler)
         return handler
-
-    async def close(self, position_id: str, size_percent: int = 100) -> dict:
-        """Close a position (partially or fully)
-        
-        Args:
-            position_id: The position to close
-            size_percent: Percentage to close (1-100)
-        
-        Returns:
-            Close result with PnL info
-        """
-        return await self._client.close_position(position_id, size_percent)
     
     # ========== Simple Trading Interface ==========
     

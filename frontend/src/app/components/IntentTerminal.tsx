@@ -35,53 +35,32 @@ const HELP_TEXT = `
 ╚══════════════════════════════════════════════════════════════╝
 `.trim();
 
-// Parse natural language command
-function parseIntent(input: string): ParsedIntent {
-  const text = input.toLowerCase().trim();
-  
-  // Market detection
-  const marketMatch = text.match(/\b(btc|eth|sol|bitcoin|ethereum|solana)\b/i);
-  const market = marketMatch 
-    ? marketMatch[1].toUpperCase().replace('BITCOIN', 'BTC').replace('ETHEREUM', 'ETH').replace('SOLANA', 'SOL') + '-PERP'
-    : undefined;
+// Parse natural language command via API
+async function parseIntent(input: string): Promise<ParsedIntent> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/intents/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: input }),
+    });
 
-  // Size detection: $100, 100刀, 100美元, 100 usdc
-  const sizeMatch = text.match(/\$(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:刀|美元|usdc|u)/i);
-  const size = sizeMatch ? parseFloat(sizeMatch[1] || sizeMatch[2]) : undefined;
-
-  // Leverage detection: 5倍, 5x, 5倍杠杆
-  const leverageMatch = text.match(/(\d+)\s*(?:倍|x|倍杠杆)/i);
-  const leverage = leverageMatch ? parseInt(leverageMatch[1]) : undefined;
-
-  // Price detection for alerts: 跌破 90, 涨到 100
-  const priceMatch = text.match(/(?:跌破|涨到|到达|突破)\s*(\d+(?:\.\d+)?)/);
-  const price = priceMatch ? parseFloat(priceMatch[1]) : undefined;
-
-  // Action detection
-  if (/帮助|help|\?/.test(text)) {
-    return { action: 'help', rawCommand: input };
-  }
-  
-  if (/做多|开多|买入|long|buy/.test(text) && !(/盯|alert|watch/.test(text))) {
-    return { action: 'long', market, size, leverage: leverage || 5, rawCommand: input };
-  }
-  
-  if (/做空|开空|卖空|short|sell/.test(text)) {
-    return { action: 'short', market, size, leverage: leverage || 5, rawCommand: input };
-  }
-  
-  if (/平掉|关闭|平仓|close/.test(text)) {
-    return { action: 'close', market, rawCommand: input };
-  }
-  
-  if (/持仓|仓位|position|显示|查看/.test(text) && !market) {
-    return { action: 'positions', rawCommand: input };
-  }
-  
-  if (/盯|watch|alert|提醒|通知/.test(text)) {
-    return { action: 'alert', market, price, rawCommand: input };
+    if (res.ok) {
+      const data = await res.json();
+      const parsed = data.parsed;
+      return {
+        action: parsed.action,
+        market: parsed.market || undefined,
+        size: parsed.size || undefined,
+        leverage: parsed.leverage || undefined,
+        price: parsed.price || undefined,
+        rawCommand: input,
+      };
+    }
+  } catch (e) {
+    console.error('Parse error:', e);
   }
 
+  // Fallback to basic unknown state if API fails
   return { action: 'unknown', rawCommand: input };
 }
 
@@ -117,7 +96,7 @@ interface TypewriterLineProps {
 
 function TypewriterLine({ text, type, onComplete }: TypewriterLineProps) {
   const { displayed, isComplete } = useTypewriter(text, 15);
-  
+
   useEffect(() => {
     if (isComplete && onComplete) {
       onComplete();
@@ -147,7 +126,7 @@ export default function IntentTerminal() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  
+
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -285,7 +264,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
       type: 'info'
     }]);
 
-    const intent = parseIntent(cmd);
+    const intent = await parseIntent(cmd);
     let output: string;
     let type: CommandResult['type'] = 'success';
 
@@ -374,7 +353,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
           ref={terminalRef}
           onClick={focusInput}
           className="bg-zinc-950 p-4 font-mono text-sm min-h-[400px] max-h-[500px] overflow-y-auto cursor-text"
-          style={{ 
+          style={{
             fontFamily: '"SF Mono", "Fira Code", "Monaco", "Consolas", monospace',
             textShadow: '0 0 10px rgba(34, 211, 238, 0.3)'
           }}
@@ -389,12 +368,11 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
                 </div>
               )}
               {item.output && (
-                <pre className={`whitespace-pre-wrap mt-1 ${
-                  item.type === 'success' ? 'text-green-400' :
-                  item.type === 'error' ? 'text-red-400' :
-                  item.type === 'pending' ? 'text-yellow-400' :
-                  'text-cyan-400'
-                }`}>
+                <pre className={`whitespace-pre-wrap mt-1 ${item.type === 'success' ? 'text-green-400' :
+                    item.type === 'error' ? 'text-red-400' :
+                      item.type === 'pending' ? 'text-yellow-400' :
+                        'text-cyan-400'
+                  }`}>
                   {i === history.length - 1 && !isProcessing ? (
                     <TypewriterLine text={item.output} type={item.type} />
                   ) : (

@@ -221,7 +221,11 @@ class PriceFeed:
                 if resp.status == 200:
                     data = await resp.json()
                     
-                    # 支持的币种列表
+                    # 支持的币种列表 + Hyperliquid ticker 映射
+                    # Hyperliquid 部分资产使用不同 ticker (如 kPEPE = 1000 PEPE)
+                    HL_TICKER_MAP = {
+                        "PEPE": ("kPEPE", 1000),  # kPEPE 报价 = 1000 PEPE，需除以 1000
+                    }
                     supported = [
                         "BTC", "ETH", "SOL",  # 主流
                         "DOGE", "PEPE", "WIF",  # Meme
@@ -229,10 +233,11 @@ class PriceFeed:
                         "AVAX", "LINK", "AAVE",  # DeFi
                     ]
                     for symbol in supported:
-                        if symbol in data:
+                        hl_ticker, divisor = HL_TICKER_MAP.get(symbol, (symbol, 1))
+                        if hl_ticker in data:
                             prices[symbol] = Price(
                                 asset=symbol,
-                                price=float(data[symbol]),
+                                price=float(data[hl_ticker]) / divisor,
                                 source="hyperliquid",
                             )
                     

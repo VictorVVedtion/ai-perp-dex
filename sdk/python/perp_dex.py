@@ -1,24 +1,21 @@
 """
-AI Perp DEX Python SDK
+AI Perp DEX Python SDK (Sync)
 
-Usage:
+简化版同步 SDK，适合快速脚本和测试。
+生产环境推荐使用异步版: `from ai_perp_dex import TradingHub`
+
+Sync Usage (this module):
     from perp_dex import PerpDEX
-    
+
     dex = PerpDEX(api_key="th_0001_xxx")
-    
-    # Get prices
     prices = dex.get_prices()
-    
-    # Open position
     position = dex.open_long("BTC-PERP", size=100, leverage=5)
-    
-    # Create signal
-    signal = dex.create_signal(
-        asset="BTC",
-        direction="LONG", 
-        target_price=80000,
-        stake=50
-    )
+
+Async Usage (recommended for production):
+    from ai_perp_dex import TradingHub
+
+    async with TradingHub(api_key="th_xxx") as hub:
+        await hub.long("BTC-PERP", size=100, leverage=5)
 """
 
 import requests
@@ -32,12 +29,24 @@ class Position:
     position_id: str
     asset: str
     side: str
+    direction: str  # alias for side
     size_usdc: float
     entry_price: float
     leverage: int
+    margin: float
+    margin_ratio: float
+    current_price: float
     unrealized_pnl: float
+    unrealized_pnl_pct: float
     liquidation_price: float
     is_open: bool
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    realized_pnl: Optional[float] = None
+    close_price: Optional[float] = None
+    closed_at: Optional[str] = None
+    close_reason: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 @dataclass
@@ -171,13 +180,77 @@ class PerpDEX:
         })
     
     def withdraw(self, amount: float, agent_id: Optional[str] = None) -> Dict:
-        """Withdraw USDC"""
+        """Withdraw USDC (Paper Trading)"""
         aid = agent_id or self.agent_id
         return self._request("POST", "/withdraw", {
             "agent_id": aid,
             "amount": amount
         })
-    
+
+    # === On-chain (Lite Mode) ===
+
+    def deposit_onchain(
+        self,
+        amount: float,
+        tx_signature: str,
+        wallet_address: Optional[str] = None,
+    ) -> Dict:
+        """
+        Confirm on-chain deposit (Lite mode)
+
+        The agent must first send USDC to the Vault address via SPL Transfer,
+        then call this method with the tx_signature to confirm.
+
+        Args:
+            amount: USDC amount deposited
+            tx_signature: Solana transaction signature
+            wallet_address: Sender wallet address (defaults to registered wallet)
+
+        Returns:
+            {"success": True, "balance": {...}, "tx_hash": "...", "mode": "lite"}
+        """
+        wallet = wallet_address or self._get_wallet()
+        return self._request("POST", "/deposit/confirm", {
+            "tx_signature": tx_signature,
+            "amount": amount,
+            "wallet_address": wallet,
+        })
+
+    def withdraw_onchain(
+        self,
+        amount: float,
+        wallet_address: Optional[str] = None,
+    ) -> Dict:
+        """
+        Withdraw USDC on-chain (Lite mode)
+
+        The backend sends USDC from the Vault to the specified wallet.
+
+        Args:
+            amount: USDC amount to withdraw (max $10,000)
+            wallet_address: Destination wallet (defaults to registered wallet)
+
+        Returns:
+            {"success": True, "tx_hash": "...", "balance": {...}, "mode": "lite"}
+        """
+        wallet = wallet_address or self._get_wallet()
+        return self._request("POST", "/withdraw/onchain", {
+            "amount": amount,
+            "wallet_address": wallet,
+        })
+
+    def get_vault_info(self) -> Dict:
+        """Get Vault configuration (deposit address, network, limits)"""
+        return self._request("GET", "/vault/info")
+
+    def _get_wallet(self) -> str:
+        """Get wallet address from agent profile"""
+        if hasattr(self, '_wallet_cache') and self._wallet_cache:
+            return self._wallet_cache
+        agent = self.get_agent()
+        self._wallet_cache = agent.get("wallet_address", "")
+        return self._wallet_cache
+
     # === Trading ===
     
     def open_long(
@@ -214,10 +287,16 @@ class PerpDEX:
             "leverage": leverage
         })
     
-    def get_positions(self, agent_id: Optional[str] = None) -> List[Dict]:
-        """Get all positions for agent"""
+    def get_positions(self, agent_id: Optional[str] = None, include_closed: bool = False) -> List[Dict]:
+        """Get positions for agent
+
+        Args:
+            agent_id: Agent ID (defaults to self)
+            include_closed: Include closed/historical positions (default: False)
+        """
         aid = agent_id or self.agent_id
-        data = self._request("GET", f"/positions/{aid}")
+        params = {"include_closed": "true"} if include_closed else None
+        data = self._request("GET", f"/positions/{aid}", params=params)
         return data.get("positions", [])
     
     def close_position(self, position_id: str) -> Dict:
@@ -318,25 +397,26 @@ class PerpDEX:
 def quick_start(display_name: str, wallet: str, deposit_amount: float = 1000) -> PerpDEX:
     """
     Quick start: register agent, deposit, return ready client
-    
+
     Usage:
         dex = quick_start("MyBot", "0x...", 1000)
         dex.open_long("BTC-PERP", 100, leverage=3)
     """
     # Register
     result = PerpDEX.register(display_name, wallet)
-    agent_id = result["agent_id"]
+    # API 返回嵌套结构: {"agent": {"agent_id": ...}, "api_key": ...}
+    agent_id = result["agent"]["agent_id"]
     api_key = result["api_key"]
-    
+
     # Create client
     dex = PerpDEX(api_key=api_key, agent_id=agent_id)
-    
+
     # Deposit
     dex.deposit(deposit_amount)
-    
+
     print(f"✅ Agent {agent_id} ready with ${deposit_amount} balance")
     print(f"   API Key: {api_key}")
-    
+
     return dex
 
 

@@ -104,11 +104,14 @@ class FeeService:
     ) -> FeeRecord:
         """
         收取手续费
-        
-        返回手续费记录，调用方负责从 Agent 余额扣除
+
+        返回手续费记录，同时从 Agent 余额扣除并存入 treasury
         """
         import uuid
-        
+
+        if size_usdc <= 0:
+            raise ValueError(f"Fee size must be positive, got {size_usdc}")
+
         if fee_type == FeeType.TAKER:
             rate = self.config.taker_rate
         elif fee_type == FeeType.MAKER:
@@ -135,19 +138,18 @@ class FeeService:
         self.total_collected += fee_amount
         self.treasury_balance += fee_amount
         
-        # 从 Agent 余额扣除费用 (通过 settlement_engine)
+        # 从 Agent 余额扣除费用，并存入 protocol_treasury
         if self.position_manager:
             current_balance = self.position_manager.get_agent_balance(agent_id)
             new_balance = self.position_manager.update_agent_balance(agent_id, -fee_amount)
+            # 存入 treasury 账户（资金闭环，不能只扣不收）
+            self.position_manager.update_agent_balance(
+                self.config.treasury_agent_id, +fee_amount
+            )
             logger.info(
-                f"Fee deducted: ${fee_amount:.4f} from {agent_id} "
+                f"Fee: ${fee_amount:.4f} {agent_id} -> {self.config.treasury_agent_id} "
                 f"(balance: ${current_balance:.2f} -> ${new_balance:.2f})"
             )
-        
-        logger.info(
-            f"Fee collected: {fee_type.value} ${fee_amount:.4f} from {agent_id} "
-            f"(size=${size_usdc}, rate={rate*100:.3f}%)"
-        )
         
         return record
     

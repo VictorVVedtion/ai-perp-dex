@@ -41,9 +41,11 @@ class SettlementStatus(Enum):
 
 
 class SettlementType(Enum):
-    INTERNAL = "internal"  # 内部记账
-    ONCHAIN = "onchain"    # 链上结算
-    MULTISIG = "multisig"  # 多签结算
+    INTERNAL = "internal"    # 内部记账
+    ONCHAIN = "onchain"      # 链上结算
+    MULTISIG = "multisig"    # 多签结算
+    DEPOSIT = "deposit"      # 链上充值 (Lite 模式)
+    WITHDRAW = "withdraw"    # 链上提现 (Lite 模式)
 
 
 @dataclass
@@ -216,7 +218,7 @@ class SettlementEngine:
         return balance
     
     def withdraw(self, agent_id: str, amount: float) -> bool:
-        """出金"""
+        """出金 (Paper Trading 内部记账)"""
         balance = self.get_balance(agent_id)
         if balance.available < amount:
             return False
@@ -225,6 +227,169 @@ class SettlementEngine:
         balance.last_updated = datetime.now()
         self._save_balance_to_redis(balance)
         return True
+
+    # === Lite 模式: 链上充提 ===
+
+    async def deposit_with_tx_verification(
+        self,
+        agent_id: str,
+        amount: float,
+        tx_signature: str,
+        from_wallet: str,
+    ) -> dict:
+        """
+        链上充值 (Lite 模式)
+
+        流程:
+        1. 调用 SolanaClient 验证链上 tx
+        2. 验证通过后增加余额
+        3. 记录结算记录
+
+        Returns:
+            {"success": True/False, "balance": ..., "settlement": ..., "error": ...}
+        """
+        from services.solana_client import solana_client
+
+        # 验证链上交易
+        verification = await solana_client.verify_deposit_tx(
+            tx_signature=tx_signature,
+            expected_amount=amount,
+            from_wallet=from_wallet,
+        )
+
+        if not verification.valid:
+            return {
+                "success": False,
+                "error": verification.error,
+            }
+
+        # 增加余额
+        balance = self.deposit(agent_id, verification.amount)
+
+        # 创建结算记录
+        settlement = Settlement(
+            settlement_id=f"stl_{uuid.uuid4().hex[:12]}",
+            settlement_type=SettlementType.DEPOSIT,
+            from_agent=from_wallet,
+            to_agent=agent_id,
+            amount_usdc=verification.amount,
+            tx_hash=tx_signature,
+            chain="solana",
+            status=SettlementStatus.SETTLED,
+            settled_at=datetime.now(),
+        )
+        self.settlements[settlement.settlement_id] = settlement
+
+        # 持久化结算记录
+        r = get_redis()
+        if r:
+            r.hset(
+                "perpdex:settlements",
+                settlement.settlement_id,
+                json.dumps(settlement.to_dict()),
+            )
+
+        return {
+            "success": True,
+            "balance": balance.to_dict(),
+            "settlement": settlement.to_dict(),
+            "tx_hash": tx_signature,
+        }
+
+    async def withdraw_onchain(
+        self,
+        agent_id: str,
+        amount: float,
+        wallet_address: str,
+    ) -> dict:
+        """
+        链上提现 (Lite 模式)
+
+        流程:
+        1. 检查余额 & 锁定金额
+        2. SolanaClient 从 Vault 发送 USDC
+        3. 确认后扣减余额
+        4. 失败则解锁金额
+
+        Returns:
+            {"success": True/False, "tx_hash": ..., "balance": ..., "error": ...}
+        """
+        from services.solana_client import solana_client
+
+        # 检查余额
+        balance = self.get_balance(agent_id)
+        if balance.available < amount:
+            return {
+                "success": False,
+                "error": f"Insufficient balance: available ${balance.available:.2f}, requested ${amount:.2f}",
+            }
+
+        # 锁定金额
+        balance.locked_usdc += amount
+        self._save_balance_to_redis(balance)
+
+        try:
+            # 从 Vault 发送 USDC
+            result = await solana_client.send_usdc(
+                to_wallet=wallet_address,
+                amount=amount,
+                agent_id=agent_id,
+            )
+
+            if not result.success:
+                # 失败: 解锁金额
+                balance.locked_usdc -= amount
+                self._save_balance_to_redis(balance)
+                return {
+                    "success": False,
+                    "error": result.error,
+                }
+
+            # 成功: 解锁并扣减
+            balance.locked_usdc -= amount
+            balance.balance_usdc -= amount
+            balance.total_withdrawn += amount
+            balance.last_updated = datetime.now()
+            self._save_balance_to_redis(balance)
+
+            # 创建结算记录
+            settlement = Settlement(
+                settlement_id=f"stl_{uuid.uuid4().hex[:12]}",
+                settlement_type=SettlementType.WITHDRAW,
+                from_agent=agent_id,
+                to_agent=wallet_address,
+                amount_usdc=amount,
+                tx_hash=result.tx_signature,
+                chain="solana",
+                status=SettlementStatus.SETTLED,
+                settled_at=datetime.now(),
+            )
+            self.settlements[settlement.settlement_id] = settlement
+
+            # 持久化
+            r = get_redis()
+            if r:
+                r.hset(
+                    "perpdex:settlements",
+                    settlement.settlement_id,
+                    json.dumps(settlement.to_dict()),
+                )
+
+            return {
+                "success": True,
+                "tx_hash": result.tx_signature,
+                "balance": balance.to_dict(),
+                "settlement": settlement.to_dict(),
+            }
+
+        except Exception as e:
+            # 异常: 解锁金额
+            balance.locked_usdc -= amount
+            self._save_balance_to_redis(balance)
+            return {
+                "success": False,
+                "error": f"Withdrawal failed: {str(e)}",
+            }
     
     async def settle_internal(
         self,

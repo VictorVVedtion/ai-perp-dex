@@ -27,7 +27,21 @@ export default function TradePage() {
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
   const [balance] = useState(10000);
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [apiKey, setApiKey] = useState('');
+  const [agentId, setAgentId] = useState('');
   const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // 从 localStorage 读取认证信息（与 portfolio/signals 页面一致）
+  useEffect(() => {
+    const saved = localStorage.getItem('perp_dex_auth');
+    if (saved) {
+      try {
+        const { apiKey: key, agentId: id } = JSON.parse(saved);
+        setApiKey(key);
+        setAgentId(id);
+      } catch {}
+    }
+  }, []);
 
   // Fetch markets from API
   useEffect(() => {
@@ -119,15 +133,21 @@ export default function TradePage() {
     setLoading(true);
     setResult(null);
 
+    if (!apiKey || !agentId) {
+      setResult({ success: false, message: 'Please login first. Go to Portfolio page to enter your API Key.' });
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch('${API_BASE_URL}/intents', {
+      const response = await fetch(`${API_BASE_URL}/intents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': 'demo_key',
+          'X-API-Key': apiKey,
         },
         body: JSON.stringify({
-          agent_id: 'web_user',
+          agent_id: agentId,
           intent_type: side.toLowerCase(),
           asset: market,
           size_usdc: parseFloat(sizeUsdc),

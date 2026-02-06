@@ -98,13 +98,8 @@ class ExternalRouter:
     HL_API = "https://api.hyperliquid.xyz"
     HL_INFO = "https://api.hyperliquid.xyz/info"
     
-    # 资产映射 (AI Perp DEX -> Hyperliquid)
-    ASSET_MAP = {
-        "BTC-PERP": "BTC", "ETH-PERP": "ETH", "SOL-PERP": "SOL",
-        "DOGE-PERP": "DOGE", "PEPE-PERP": "PEPE", "WIF-PERP": "WIF",
-        "ARB-PERP": "ARB", "OP-PERP": "OP", "SUI-PERP": "SUI",
-        "AVAX-PERP": "AVAX", "LINK-PERP": "LINK", "AAVE-PERP": "AAVE",
-    }
+    # 资产映射 — Single Source of Truth (config/assets.py)
+    from config.assets import HYPERLIQUID_ASSET_MAP as ASSET_MAP
     
     # 费率
     FEES = {

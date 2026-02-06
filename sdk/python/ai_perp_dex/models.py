@@ -114,15 +114,24 @@ class Position:
     current_price: float
     leverage: int
     margin: float
+    margin_ratio: float
     unrealized_pnl: float
     unrealized_pnl_pct: float
     liquidation_price: float
-    opened_at: Optional[datetime] = None
+    is_open: bool = True
+    created_at: Optional[datetime] = None
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
-    
+    realized_pnl: Optional[float] = None
+    close_price: Optional[float] = None
+    closed_at: Optional[datetime] = None
+    close_reason: Optional[str] = None
+
     @classmethod
     def from_dict(cls, data: dict) -> "Position":
+        # created_at: API 返回 "created_at" 字段
+        created_at_str = data.get("created_at") or data.get("opened_at")
+        closed_at_str = data.get("closed_at")
         return cls(
             position_id=data["position_id"],
             agent_id=data["agent_id"],
@@ -133,12 +142,18 @@ class Position:
             current_price=data.get("current_price", data["entry_price"]),
             leverage=data["leverage"],
             margin=data.get("margin", 0),
+            margin_ratio=data.get("margin_ratio", 0),
             unrealized_pnl=data.get("unrealized_pnl", 0),
             unrealized_pnl_pct=data.get("unrealized_pnl_pct", 0),
             liquidation_price=data.get("liquidation_price", 0),
-            opened_at=datetime.fromisoformat(data["opened_at"]) if data.get("opened_at") else None,
+            is_open=data.get("is_open", True),
+            created_at=datetime.fromisoformat(created_at_str) if created_at_str else None,
             stop_loss=data.get("stop_loss"),
             take_profit=data.get("take_profit"),
+            realized_pnl=data.get("realized_pnl"),
+            close_price=data.get("close_price"),
+            closed_at=datetime.fromisoformat(closed_at_str) if closed_at_str else None,
+            close_reason=data.get("close_reason"),
         )
     
     @property

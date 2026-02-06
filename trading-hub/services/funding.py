@@ -217,21 +217,20 @@ class FundingSettlement:
             return
         
         # 计算支付
-        # 正费率: 多付空
-        # 负费率: 空付多
-        
+        # 正费率 (rate > 0): 多头付给空头
+        # 负费率 (rate < 0): 空头付给多头
+        # 公式自带符号，无需额外翻转
+
         for pos in longs:
-            payment = -pos.size_usdc * rate  # 负 = 支付
-            if rate < 0:
-                payment = -payment  # 负费率时多头收钱
-            
+            # 正费率: -size * (+rate) = 负数 (付钱)
+            # 负费率: -size * (-rate) = 正数 (收钱)
+            payment = -pos.size_usdc * rate
             self._record_payment(pos, rate, payment, timestamp)
-        
+
         for pos in shorts:
-            payment = pos.size_usdc * rate  # 正 = 收到
-            if rate < 0:
-                payment = -payment  # 负费率时空头付钱
-            
+            # 正费率: +size * (+rate) = 正数 (收钱)
+            # 负费率: +size * (-rate) = 负数 (付钱)
+            payment = pos.size_usdc * rate
             self._record_payment(pos, rate, payment, timestamp)
     
     def _record_payment(self, position, rate: float, amount: float, timestamp: datetime):
@@ -292,13 +291,14 @@ class FundingSettlement:
                 continue
             
             if pos.side.value == "long":
+                # 正费率: -size * (+rate) = 负数 (付钱)
+                # 负费率: -size * (-rate) = 正数 (收钱)
                 payment = -pos.size_usdc * rate.rate
             else:
+                # 正费率: +size * (+rate) = 正数 (收钱)
+                # 负费率: +size * (-rate) = 负数 (付钱)
                 payment = pos.size_usdc * rate.rate
-            
-            if rate.rate < 0:
-                payment = -payment
-            
+
             predictions.append({
                 "asset": pos.asset,
                 "side": pos.side.value,

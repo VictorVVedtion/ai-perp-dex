@@ -116,22 +116,30 @@ class Position:
             return self.current_price <= self.take_profit
     
     def to_dict(self) -> dict:
+        margin = self.size_usdc / self.leverage if self.leverage else self.size_usdc
         return {
             "position_id": self.position_id,
             "agent_id": self.agent_id,
             "asset": self.asset,
             "side": self.side.value,
+            "direction": self.side.value,  # alias — 兼容不同 SDK 命名习惯
             "size_usdc": self.size_usdc,
+            "margin": round(margin, 2),
+            "margin_ratio": round(1 / self.leverage if self.leverage else 1, 4),
             "entry_price": self.entry_price,
             "leverage": self.leverage,
             "current_price": self.current_price,
             "unrealized_pnl": round(self.unrealized_pnl, 2),
             "unrealized_pnl_pct": round(self.unrealized_pnl_pct, 2),
+            "realized_pnl": round(self.realized_pnl, 2) if self.realized_pnl is not None else None,
             "liquidation_price": round(self.liquidation_price, 2),
             "stop_loss": self.stop_loss,
             "take_profit": self.take_profit,
             "is_open": self.is_open,
+            "close_price": self.close_price,
+            "close_reason": self.close_reason,
             "created_at": self.created_at.isoformat(),
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
         }
 
 
@@ -159,13 +167,8 @@ class PositionManager:
     4. 风控告警
     """
     
-    # 支持的资产白名单 (与 server.VALID_ASSETS / external_router.ASSET_MAP 保持同步)
-    SUPPORTED_ASSETS = {
-        "BTC-PERP", "ETH-PERP", "SOL-PERP",   # 主流
-        "DOGE-PERP", "PEPE-PERP", "WIF-PERP",  # Meme
-        "ARB-PERP", "OP-PERP", "SUI-PERP",     # L2
-        "AVAX-PERP", "LINK-PERP", "AAVE-PERP", # DeFi
-    }
+    # 支持的资产白名单 — Single Source of Truth (config/assets.py)
+    from config.assets import SUPPORTED_ASSETS
     
     # 风控参数
     LIQUIDATION_WARNING_THRESHOLD = 0.5  # 亏损 50% 保证金时警告

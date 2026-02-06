@@ -1,13 +1,16 @@
 """
-AI Perp DEX - Python SDK
+AI Perp DEX - Python SDK (Async, Production)
 
-AI-Native 永续合约交易接口，让 Agent 一行代码接入交易。
+这是推荐的生产级 SDK，提供异步接口、类型化模型和完整异常处理。
+简单脚本可使用同步版: `from perp_dex import PerpDEX`
 
 Usage:
     from ai_perp_dex import TradingHub
-    
+
     async with TradingHub(api_key="th_xxx") as hub:
-        match = await hub.long("BTC", size=100, leverage=5)
+        await hub.long("BTC-PERP", size=100, leverage=5)
+        positions = await hub.get_positions()
+        signal = await hub.create_signal("BTC-PERP", "price_above", 70000, stake=50)
 """
 
 from .client import TradingHub, quick_long, quick_short
@@ -18,9 +21,16 @@ from .models import (
     Signal,
     Agent,
     Balance,
+    OrderBook,
+    Price,
+    TradeAdvice,
+    RoutingResult,
+    TradeResult,
     Direction,
     IntentStatus,
     PositionSide,
+    SignalType,
+    SignalStatus,
 )
 from .exceptions import (
     TradingHubError,
@@ -45,9 +55,16 @@ __all__ = [
     "Signal",
     "Agent",
     "Balance",
+    "OrderBook",
+    "Price",
+    "TradeAdvice",
+    "RoutingResult",
+    "TradeResult",
     "Direction",
     "IntentStatus",
     "PositionSide",
+    "SignalType",
+    "SignalStatus",
     # Exceptions
     "TradingHubError",
     "AuthenticationError",

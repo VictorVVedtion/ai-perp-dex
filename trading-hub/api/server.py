@@ -34,7 +34,9 @@ from services.price_feed import PriceFeed, price_feed
 from services.pnl_tracker import pnl_tracker
 from services.external_router import external_router, RoutingResult
 from services.fee_service import fee_service, FeeType
+from services.fee_service import fee_service, FeeType
 from services.liquidation_engine import liquidation_engine
+from services.intent_parser import intent_parser
 
 # 鉴权中间件
 from middleware.auth import (
@@ -232,14 +234,9 @@ class RegisterRequest(BaseModel):
         return v[:50]
 
 
-# 支持的交易对 - 从环境变量读取或使用默认值
-_assets_env = os.environ.get("VALID_ASSETS", "")
-VALID_ASSETS = _assets_env.split(",") if _assets_env else [
-    "BTC-PERP", "ETH-PERP", "SOL-PERP",  # 主流
-    "DOGE-PERP", "PEPE-PERP", "WIF-PERP",  # Meme
-    "ARB-PERP", "OP-PERP", "SUI-PERP",  # L2
-    "AVAX-PERP", "LINK-PERP", "AAVE-PERP",  # DeFi
-]
+# 支持的交易对 — Single Source of Truth (config/assets.py)
+from config.assets import SUPPORTED_ASSETS as _ASSET_SET
+VALID_ASSETS = list(_ASSET_SET)
 
 class IntentRequest(BaseModel):
     agent_id: str
@@ -272,8 +269,12 @@ class IntentRequest(BaseModel):
             raise ValueError(f"Invalid intent_type. Must be one of: {valid}")
         return v.lower()
 
+
 class MatchRequest(BaseModel):
     intent_id: str
+
+class IntentParseRequest(BaseModel):
+    text: str = Field(..., description="Natural language command to parse")
 
 # === API Endpoints ===
 
@@ -699,7 +700,12 @@ async def create_intent(
                 "intent_status": "created",
             })
     else:
-        position_data = None
+        # 价格源不可用时，不应返回 success:true + position:null
+        raise HTTPException(status_code=503, detail={
+            "message": f"Price feed unavailable for {req.asset}, cannot open position",
+            "intent_id": intent.intent_id,
+            "intent_status": "created",
+        })
     
     # === 保存 Agent Thought ===
     if req.reason:
@@ -796,6 +802,16 @@ async def list_intents(asset: str = None, status: str = "open", limit: int = 100
     else:
         intents = list(store.intents.values())[:limit]
     return {"intents": [i.to_dict() for i in intents]}
+
+@app.post("/intents/parse")
+async def parse_intent(req: IntentParseRequest):
+    """
+    解析自然语言交易指令
+    Input: "Buy ETH $100"
+    Output: Structured Intent
+    """
+    result = intent_parser.parse(req.text)
+    return {"parsed": result.dict()}
 
 @app.delete("/intents/{intent_id}")
 async def cancel_intent(
@@ -1220,23 +1236,30 @@ async def startup_liquidation():
 @app.get("/positions/{agent_id}")
 async def get_positions(
     agent_id: str,
+    include_closed: bool = False,
     auth: AgentAuth = Depends(verify_agent)
 ):
-    """获取 Agent 的持仓 (需要认证，只能查看自己的持仓)"""
+    """获取 Agent 的持仓 (需要认证，只能查看自己的持仓)
+
+    Query params:
+        include_closed: 是否包含已平仓历史 (默认 false, 只返回开放持仓)
+    """
     # 验证只能查看自己的持仓
     verify_agent_owns_resource(auth, agent_id, "position list")
 
-    positions = position_manager.get_positions(agent_id)
+    positions = position_manager.get_positions(agent_id, only_open=not include_closed)
 
-    # 更新价格 (使用同步缓存方法)
+    # 更新开放持仓的价格 (使用同步缓存方法)
     for pos in positions:
-        asset = pos.asset.replace("-PERP", "")
-        price = price_feed.get_cached_price(asset)
-        pos.update_pnl(price)
+        if pos.is_open:
+            asset = pos.asset.replace("-PERP", "")
+            price = price_feed.get_cached_price(asset)
+            pos.update_pnl(price)
 
     return {
         "agent_id": agent_id,
         "positions": [p.to_dict() for p in positions],
+        "total": len(positions),
     }
 
 @app.get("/portfolio/{agent_id}")
@@ -1340,6 +1363,7 @@ async def close_position(
         return {
             "success": True,
             "position_id": position_id,
+            "position": pos.to_dict(),  # 完整 Position 对象
             "result": {
                 "entry_price": entry_price,
                 "exit_price": price,
@@ -1650,6 +1674,117 @@ async def withdraw(
         raise HTTPException(400, "Insufficient balance")
     balance = settlement_engine.get_balance(auth.agent_id)
     return {"success": True, "balance": balance.to_dict()}
+
+# ============ Lite 模式: 链上充提 ============
+
+from services.solana_client import solana_client
+
+class DepositConfirmRequest(BaseModel):
+    tx_signature: str = Field(..., min_length=10, description="Solana transaction signature")
+    amount: float = Field(..., gt=0, le=100000, description="Deposit amount in USDC (max $100,000)")
+    wallet_address: str = Field(..., min_length=20, description="Sender wallet address")
+
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v):
+        return round(float(v), 2)
+
+
+class WithdrawOnchainRequest(BaseModel):
+    amount: float = Field(..., gt=0, le=10000, description="Withdraw amount in USDC (max $10,000)")
+    wallet_address: str = Field(..., min_length=20, description="Destination wallet address")
+
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v):
+        return round(float(v), 2)
+
+
+@app.post("/deposit/confirm")
+async def deposit_confirm(
+    req: DepositConfirmRequest,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """
+    确认链上充值 (Lite 模式)
+
+    流程:
+    1. Agent SDK 先发送 SPL Transfer (USDC) 到 Vault
+    2. SDK 拿到 tx_signature 后调用此端点
+    3. 后端验证链上 tx 真实性 → 增加余额
+
+    安全:
+    - 双花防护: 同一 tx_signature 只能确认一次
+    - 金额验证: 链上实际金额必须匹配
+    - 目标验证: 转账目标必须是 Vault 地址
+    """
+    result = await settlement_engine.deposit_with_tx_verification(
+        agent_id=auth.agent_id,
+        amount=req.amount,
+        tx_signature=req.tx_signature,
+        from_wallet=req.wallet_address,
+    )
+
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+
+    # 同步余额到 position_manager
+    balance = settlement_engine.get_balance(auth.agent_id)
+    position_manager.agent_balances[auth.agent_id] = balance.available
+
+    return {
+        "success": True,
+        "balance": result["balance"],
+        "tx_hash": result["tx_hash"],
+        "mode": "lite",
+    }
+
+
+@app.post("/withdraw/onchain")
+async def withdraw_onchain(
+    req: WithdrawOnchainRequest,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """
+    链上提现 (Lite 模式)
+
+    流程:
+    1. Agent 调用此端点
+    2. 后端检查余额 → 锁定金额
+    3. 后端从 Vault 签名发送 USDC 到 Agent 钱包
+    4. 确认后扣减余额
+
+    安全:
+    - 单次上限: $10,000
+    - 冷却期: 60 秒
+    - 余额锁定: 发送期间金额被锁定，失败自动解锁
+    """
+    result = await settlement_engine.withdraw_onchain(
+        agent_id=auth.agent_id,
+        amount=req.amount,
+        wallet_address=req.wallet_address,
+    )
+
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+
+    # 同步余额到 position_manager
+    balance = settlement_engine.get_balance(auth.agent_id)
+    position_manager.agent_balances[auth.agent_id] = balance.available
+
+    return {
+        "success": True,
+        "tx_hash": result["tx_hash"],
+        "balance": result["balance"],
+        "mode": "lite",
+    }
+
+
+@app.get("/vault/info")
+async def get_vault_info():
+    """获取 Vault 配置信息 (公开)"""
+    return solana_client.get_vault_info()
+
 
 # ============ Paper Trading Faucet ============
 

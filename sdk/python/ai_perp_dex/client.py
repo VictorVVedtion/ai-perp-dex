@@ -292,7 +292,7 @@ class TradingHub:
         Args:
             asset: 资产 (BTC, ETH, SOL)
             size: 仓位大小 (USDC)
-            leverage: 杠杆倍数 (1-100)
+            leverage: 杠杆倍数 (1-20)
             reason: 交易理由 (会显示在 Agent Thoughts)
             wait_match: 是否等待匹配
         
@@ -320,7 +320,7 @@ class TradingHub:
         Args:
             asset: 资产 (BTC, ETH, SOL)
             size: 仓位大小 (USDC)
-            leverage: 杠杆倍数 (1-100)
+            leverage: 杠杆倍数 (1-20)
             reason: 交易理由
             wait_match: 是否等待匹配
         
@@ -345,8 +345,8 @@ class TradingHub:
         # 验证参数
         if size <= 0:
             raise InvalidParameterError("size", size, "must be > 0")
-        if leverage < 1 or leverage > 100:
-            raise InvalidParameterError("leverage", leverage, "must be 1-100")
+        if leverage < 1 or leverage > 20:
+            raise InvalidParameterError("leverage", leverage, "must be 1-20")
         
         result = await self._request(
             "POST",
@@ -369,7 +369,7 @@ class TradingHub:
             match = Match.from_dict(result["internal_match"], self.agent_id)
         
         position = None
-        if result.get("position") and not result["position"].get("error"):
+        if result.get("position"):
             position = Position.from_dict(result["position"])
         
         return TradeResult(
@@ -472,14 +472,84 @@ class TradingHub:
         return Balance.from_dict(result["balance"])
     
     async def withdraw(self, amount: float) -> Balance:
-        """出金"""
+        """出金 (Paper Trading)"""
         result = await self._request(
             "POST",
             "/withdraw",
             json={"agent_id": self.agent_id, "amount": amount}
         )
         return Balance.from_dict(result["balance"])
-    
+
+    # === On-chain (Lite Mode) ===
+
+    async def deposit_onchain(
+        self,
+        amount: float,
+        tx_signature: str,
+        wallet_address: str = None,
+    ) -> dict:
+        """
+        确认链上充值 (Lite 模式)
+
+        Agent 先发送 SPL Transfer (USDC) 到 Vault，
+        然后调用此方法确认。
+
+        Args:
+            amount: 充值金额 (USDC)
+            tx_signature: Solana 交易签名
+            wallet_address: 发送方钱包地址
+
+        Returns:
+            {"success": True, "balance": {...}, "tx_hash": "...", "mode": "lite"}
+
+        Example:
+            result = await hub.deposit_onchain(100, "5abc...tx_sig")
+        """
+        wallet = wallet_address or self.wallet
+        return await self._request(
+            "POST",
+            "/deposit/confirm",
+            json={
+                "tx_signature": tx_signature,
+                "amount": amount,
+                "wallet_address": wallet,
+            }
+        )
+
+    async def withdraw_onchain(
+        self,
+        amount: float,
+        wallet_address: str = None,
+    ) -> dict:
+        """
+        链上提现 (Lite 模式)
+
+        后端从 Vault 发送 USDC 到指定钱包。
+
+        Args:
+            amount: 提现金额 (USDC, 最大 $10,000)
+            wallet_address: 目标钱包地址
+
+        Returns:
+            {"success": True, "tx_hash": "...", "balance": {...}, "mode": "lite"}
+
+        Example:
+            result = await hub.withdraw_onchain(50)
+        """
+        wallet = wallet_address or self.wallet
+        return await self._request(
+            "POST",
+            "/withdraw/onchain",
+            json={
+                "amount": amount,
+                "wallet_address": wallet,
+            }
+        )
+
+    async def get_vault_info(self) -> dict:
+        """获取 Vault 配置 (充值地址、网络、限额)"""
+        return await self._request("GET", "/vault/info")
+
     # === Market Data ===
     
     async def get_price(self, asset: str = "BTC") -> Price:
@@ -516,7 +586,27 @@ class TradingHub:
         """获取排行榜"""
         result = await self._request("GET", "/leaderboard", params={"limit": limit})
         return [Agent.from_dict(a) for a in result.get("leaderboard", [])]
-    
+
+    # === Risk & Alerts ===
+
+    async def get_risk_metrics(self) -> dict:
+        """获取风控指标"""
+        return await self._request("GET", f"/risk/{self.agent_id}")
+
+    async def get_alerts(self) -> list:
+        """获取风控告警"""
+        result = await self._request("GET", f"/alerts/{self.agent_id}")
+        return result.get("alerts", [])
+
+    async def get_trade_history(self) -> List[Position]:
+        """获取所有持仓（含已平仓历史）"""
+        result = await self._request(
+            "GET",
+            f"/positions/{self.agent_id}",
+            params={"include_closed": "true"}
+        )
+        return [Position.from_dict(p) for p in result.get("positions", [])]
+
     # === AI Decision Helpers ===
     
     async def should_trade(self, asset: str = "BTC-PERP") -> TradeAdvice:
