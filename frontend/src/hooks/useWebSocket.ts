@@ -11,6 +11,18 @@ const WS_URL = CONFIG_WS_URL;
 const THROTTLE_MS = 100;
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const KNOWN_BUT_UNUSED_TYPES = new Set<string>([
+  'connected',
+  'pnl_update',
+  'new_agent',
+  'new_match',
+  'external_fill',
+  'signal_created',
+  'signal_faded',
+  'bet_settled',
+  'liquidation',
+  'pong',
+]);
 
 export interface Trade {
   id: string;
@@ -54,6 +66,9 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const unknownTypesLogged = useRef<Set<string>>(new Set());
+  const shouldReconnect = useRef(true);
+  const intentionalClose = useRef(false);
   
   // 节流相关
   const pendingUpdates = useRef<Partial<WSData>>({});
@@ -81,20 +96,30 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
   }, []);
 
   const connect = useCallback(() => {
-    // Cleanup existing connection
+    // Cleanup existing connection and reconnect timers
+    if (reconnectTimeout.current) {
+      clearTimeout(reconnectTimeout.current);
+      reconnectTimeout.current = null;
+    }
+
     if (wsRef.current) {
-      wsRef.current.close();
+      intentionalClose.current = true;
+      wsRef.current.close(1000, 'Reconnecting');
+      wsRef.current = null;
     }
 
     try {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
+      shouldReconnect.current = true;
 
       ws.onopen = () => {
         console.log('[WS] Connected');
         setIsConnected(true);
         setError(null);
         reconnectAttempts.current = 0;
+        unknownTypesLogged.current.clear();
+        intentionalClose.current = false;
       };
 
       ws.onmessage = (event) => {
@@ -104,21 +129,24 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
           switch (msg.type) {
             case 'markets':
             case 'market_update':
-              // 使用节流更新
-              throttledSetData({
-                markets: Array.isArray(msg.data) ? msg.data.map(parseMarket) : data.markets,
-              });
+              if (Array.isArray(msg.data)) {
+                throttledSetData({
+                  markets: msg.data.map(parseMarket),
+                });
+              }
               break;
 
             case 'requests':
             case 'request_update':
-              // 使用节流更新
-              throttledSetData({
-                requests: Array.isArray(msg.data) ? msg.data.map(parseRequest) : data.requests,
-              });
+              if (Array.isArray(msg.data)) {
+                throttledSetData({
+                  requests: msg.data.map(parseRequest),
+                });
+              }
               break;
 
             case 'new_request':
+            case 'new_intent':
               if (msg.data) {
                 setData(prev => ({
                   ...prev,
@@ -139,10 +167,11 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
 
             case 'thought':
             case 'new_thought':
+            case 'agent_thought':
               if (msg.data) {
                 setData(prev => ({
                   ...prev,
-                  thoughts: [msg.data as ApiThought, ...prev.thoughts].slice(0, 50),
+                  thoughts: [parseThought(msg.data), ...prev.thoughts].slice(0, 50),
                 }));
               }
               break;
@@ -153,7 +182,7 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
               if (msg.data) {
                 setData(prev => ({
                   ...prev,
-                  messages: [...prev.messages, msg.data as ApiChatMessage].slice(-100),
+                  messages: [...prev.messages, parseChatMessage(msg.data)].slice(-100),
                 }));
               }
               break;
@@ -167,18 +196,50 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
 
             case 'snapshot':
               // Full state snapshot
-              setData({
-                markets: Array.isArray(msg.markets) ? msg.markets.map(parseMarket) : data.markets,
-                requests: Array.isArray(msg.requests) ? msg.requests.map(parseRequest) : data.requests,
-                trades: Array.isArray(msg.trades) ? msg.trades.map(parseTrade) : data.trades,
-                thoughts: Array.isArray(msg.thoughts) ? msg.thoughts : data.thoughts,
-                messages: Array.isArray(msg.messages) ? msg.messages : data.messages,
-                onlineCount: msg.online_count || data.onlineCount,
-              });
+              setData(prev => ({
+                markets: Array.isArray(msg.markets) ? msg.markets.map(parseMarket) : prev.markets,
+                requests: Array.isArray(msg.requests) ? msg.requests.map(parseRequest) : prev.requests,
+                trades: Array.isArray(msg.trades) ? msg.trades.map(parseTrade) : prev.trades,
+                thoughts: Array.isArray(msg.thoughts) ? msg.thoughts.map(parseThought) : prev.thoughts,
+                messages: Array.isArray(msg.messages) ? msg.messages.map(parseChatMessage) : prev.messages,
+                onlineCount: msg.online_count ?? prev.onlineCount,
+              }));
+              break;
+
+            case 'intent_cancelled':
+              if (msg.data?.intent_id) {
+                setData(prev => ({
+                  ...prev,
+                  requests: prev.requests.filter(req => req.id !== msg.data.intent_id),
+                }));
+              }
+              break;
+
+            case 'circle_post':
+            case 'circle_vote':
+              // Circles events — handled by page-level polling for now
+              break;
+
+            case 'connected':
+            case 'pnl_update':
+            case 'new_agent':
+            case 'new_match':
+            case 'external_fill':
+            case 'signal_created':
+            case 'signal_faded':
+            case 'bet_settled':
+            case 'liquidation':
+            case 'pong':
+              // 已知消息类型，当前前端无需处理；避免控制台刷屏
               break;
 
             default:
-              console.log('[WS] Unknown message type:', msg.type);
+              if (typeof msg.type === 'string' && !KNOWN_BUT_UNUSED_TYPES.has(msg.type)) {
+                if (!unknownTypesLogged.current.has(msg.type)) {
+                  unknownTypesLogged.current.add(msg.type);
+                  console.warn('[WS] Unknown message type (first seen):', msg.type);
+                }
+              }
           }
         } catch (e) {
           console.error('[WS] Parse error:', e);
@@ -186,9 +247,15 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
       };
 
       ws.onclose = (event) => {
+        const wasIntentional = intentionalClose.current;
+        intentionalClose.current = false;
         console.log('[WS] Disconnected:', event.code, event.reason);
         setIsConnected(false);
         wsRef.current = null;
+
+        if (wasIntentional || !shouldReconnect.current) {
+          return;
+        }
 
         // Auto reconnect
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
@@ -203,6 +270,9 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
       };
 
       ws.onerror = (event) => {
+        if (intentionalClose.current || !shouldReconnect.current) {
+          return;
+        }
         console.error('[WS] Error:', event);
         setError('WebSocket error');
       };
@@ -216,6 +286,7 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
   const reconnect = useCallback(() => {
     reconnectAttempts.current = 0;
     setError(null);
+    shouldReconnect.current = true;
     connect();
   }, [connect]);
 
@@ -228,14 +299,30 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
   }, []);
 
   useEffect(() => {
-    connect();
+    // Avoid duplicate connection churn in React StrictMode dev cycle.
+    const startTimer = setTimeout(() => {
+      connect();
+    }, 0);
 
     return () => {
+      shouldReconnect.current = false;
+      clearTimeout(startTimer);
+
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
+      }
+      if (throttleTimeout.current) {
+        clearTimeout(throttleTimeout.current);
+        throttleTimeout.current = null;
+      }
+      if (pendingUpdates.current && Object.keys(pendingUpdates.current).length > 0) {
+        pendingUpdates.current = {};
       }
       if (wsRef.current) {
-        wsRef.current.close();
+        intentionalClose.current = true;
+        wsRef.current.close(1000, 'Component unmount');
+        wsRef.current = null;
       }
     };
   }, [connect]);
@@ -275,5 +362,38 @@ function parseTrade(t: any): Trade {
     price: t.price || 0,
     agentId: t.agent_id || t.agentId || 'Unknown',
     timestamp: t.timestamp || Date.now(),
+  };
+}
+
+function parseThought(t: any): ApiThought {
+  return {
+    id: t.id || `thought_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    agent_id: t.agent_id || t.sender_id || 'Unknown',
+    agent_name: t.agent_name || t.sender_name || t.agent_id || t.sender_id || 'Unknown',
+    thought: t.thought || t.reason || t.content || t.action || '',
+    metadata: t.metadata || {},
+    timestamp: t.timestamp || t.created_at || new Date().toISOString(),
+  };
+}
+
+function parseChatMessage(m: any): ApiChatMessage {
+  const rawType = typeof m.message_type === 'string' ? m.message_type : 'text';
+  const normalizedType = (
+    rawType === 'thought' ||
+    rawType === 'signal' ||
+    rawType === 'challenge' ||
+    rawType === 'system' ||
+    rawType === 'text'
+  ) ? rawType : 'text';
+
+  return {
+    id: m.id || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    sender_id: m.sender_id || 'system',
+    sender_name: m.sender_name || m.sender_id || 'System',
+    channel: m.channel || 'public',
+    message_type: normalizedType,
+    content: m.content || '',
+    metadata: m.metadata || {},
+    created_at: m.created_at || m.timestamp || new Date().toISOString(),
   };
 }

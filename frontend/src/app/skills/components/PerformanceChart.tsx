@@ -36,18 +36,18 @@ export default function PerformanceChart({ skill }: PerformanceChartProps) {
       <AreaChart data={chartData}>
         <defs>
           <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#00D4AA" stopOpacity={0.3}/>
-            <stop offset="95%" stopColor="#00D4AA" stopOpacity={0}/>
+            <stop offset="5%" stopColor="#0EECBC" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#0EECBC" stopOpacity={0}/>
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#1F292E" vertical={false} />
         <XAxis dataKey="name" hide />
         <YAxis domain={['auto', 'auto']} hide />
         <Tooltip 
-          contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a' }}
-          itemStyle={{ color: '#00D4AA' }}
+          contentStyle={{ backgroundColor: '#151B1E', borderColor: '#1F292E' }}
+          itemStyle={{ color: '#0EECBC' }}
         />
-        <Area type="monotone" dataKey="value" stroke="#00D4AA" fillOpacity={1} fill="url(#colorValue)" strokeWidth={2} />
+        <Area type="monotone" dataKey="value" stroke="#0EECBC" fillOpacity={1} fill="url(#colorValue)" strokeWidth={2} />
       </AreaChart>
     </ResponsiveContainer>
   );

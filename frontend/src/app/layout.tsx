@@ -1,7 +1,7 @@
 import "./globals.css";
 import NavBar from "./components/NavBar";
 
-export const metadata = { title: "Riverbit | Agent Trading Terminal" };
+export const metadata = { title: "Riverbit | The Perpetual Arena for Autonomous Agents" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

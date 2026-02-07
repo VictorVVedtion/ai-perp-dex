@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, List, Annotated
+from typing import Optional, List, Dict, Annotated
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 import asyncio
@@ -202,6 +202,7 @@ class RegisterRequest(BaseModel):
     wallet_address: str = Field(..., min_length=1, max_length=100, description="Wallet address (non-empty)")
     display_name: Optional[str] = Field(None, max_length=50, description="Display name (max 50 chars, no HTML)")
     twitter_handle: Optional[str] = None
+    bio: Optional[str] = Field(None, max_length=500, description="Agent bio (max 500 chars)")
 
     @field_validator('wallet_address')
     @classmethod
@@ -254,6 +255,21 @@ class RegisterRequest(BaseModel):
             raise ValueError('Display name cannot be empty after sanitization')
         return v[:50]
 
+    @field_validator('bio')
+    @classmethod
+    def sanitize_bio(cls, v):
+        """过滤 bio 中的 HTML/script，防止 XSS"""
+        if v is None:
+            return v
+        import re
+        v = re.sub(r'<[^>]*>', '', v)
+        v = re.sub(r'[<>]', '', v)
+        v = re.sub(r'\b(alert|prompt|confirm|eval|Function|setTimeout|setInterval|constructor)\s*\(.*?\)', '', v, flags=re.IGNORECASE)
+        v = re.sub(r'javascript\s*:', '', v, flags=re.IGNORECASE)
+        v = re.sub(r'\bon\w+\s*=', '', v, flags=re.IGNORECASE)
+        v = v.strip()
+        return v[:500] if v else None
+
 
 # 支持的交易对 — Single Source of Truth (config/assets.py)
 from config.assets import SUPPORTED_ASSETS as _ASSET_SET
@@ -304,6 +320,46 @@ async def startup():
     """启动时初始化服务"""
     await price_feed.start()
     await external_router.start()
+
+    # Bridge runtime-generated thoughts/signals to WebSocket chat stream.
+    from services.agent_runtime import agent_runtime as _agent_runtime
+
+    async def _broadcast_runtime_chat(message: dict):
+        await manager.broadcast({
+            "type": "chat_message",
+            "data": message
+        })
+
+    async def _execute_runtime_trade(
+        agent_id: str,
+        market: str,
+        side: str,
+        size_usdc: float,
+        confidence: float,
+        reasoning: str,
+    ) -> dict:
+        # 根据信心动态设置杠杆: 1x - 10x（并被 /intents 的校验进一步约束）
+        leverage = max(1, min(10, int(round(1 + confidence * 9))))
+        req = IntentRequest(
+            agent_id=agent_id,
+            intent_type=side,
+            asset=market,
+            size_usdc=max(1.0, round(size_usdc, 2)),
+            leverage=leverage,
+            max_slippage=0.005,
+            reason=f"[Runtime] {reasoning}",
+        )
+        auth = AgentAuth(agent_id=agent_id, scopes=["read", "write"])
+        try:
+            result = await create_intent(req, auth)
+            return result if isinstance(result, dict) else {"success": True, "result": result}
+        except HTTPException as e:
+            return {"success": False, "error": str(e.detail), "status_code": e.status_code}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    _agent_runtime.set_realtime_message_hook(_broadcast_runtime_chat)
+    _agent_runtime.set_trade_executor_hook(_execute_runtime_trade)
     
     # 注册价格更新回调 - 广播 PnL 更新
     @price_feed.on_price_update
@@ -330,6 +386,9 @@ async def shutdown():
     """关闭时清理"""
     await price_feed.stop()
     await external_router.stop()
+    from services.agent_runtime import agent_runtime as _agent_runtime
+    _agent_runtime.set_realtime_message_hook(None)
+    _agent_runtime.set_trade_executor_hook(None)
 
 from fastapi.responses import FileResponse
 import os
@@ -438,6 +497,7 @@ async def register_agent(req: RegisterRequest):
         wallet_address=req.wallet_address,
         display_name=req.display_name,
         twitter_handle=req.twitter_handle,
+        bio=req.bio,
     )
     
     # 同时注册到通讯系统
@@ -467,7 +527,12 @@ async def register_agent(req: RegisterRequest):
         "api_key_info": api_key.to_dict(),
     }
 
-# 注意: /agents/discover 必须在 /agents/{agent_id} 之前，否则会被拦截
+# 注意: /agents/discover 和 /agents/schema 必须在 /agents/{agent_id} 之前，否则会被拦截
+@app.get("/agents/schema")
+async def get_deploy_schema_forward():
+    """返回 Agent 部署的 JSON Schema (前向路由，避免被 /agents/{agent_id} 拦截)。"""
+    return await get_deploy_schema()
+
 @app.get("/agents/discover")
 async def discover_agents_route(specialty: str = None, min_trades: int = None):
     """发现其他 Agent"""
@@ -3017,6 +3082,7 @@ class StartAgentRequest(BaseModel):
     markets: List[str] = ["BTC-PERP", "ETH-PERP"]
     strategy: str = "momentum"
     auto_broadcast: bool = True
+    exploration_rate: float = 0.1
 
 @app.post("/runtime/agents/{agent_id}/start")
 async def start_agent_runtime(
@@ -3045,6 +3111,7 @@ async def start_agent_runtime(
         markets=req.markets if req else ["BTC-PERP", "ETH-PERP"],
         strategy=req.strategy if req else "momentum",
         auto_broadcast=req.auto_broadcast if req else True,
+        exploration_rate=req.exploration_rate if req else 0.1,
     )
     agent_runtime.register_agent(config)
     
@@ -3060,6 +3127,7 @@ async def start_agent_runtime(
             "heartbeat_interval": config.heartbeat_interval,
             "markets": config.markets,
             "strategy": config.strategy,
+            "exploration_rate": config.exploration_rate,
         }
     }
 
@@ -3098,6 +3166,371 @@ async def start_demo_agent():
             "heartbeat_interval": config.heartbeat_interval,
             "markets": config.markets,
         }
+    }
+
+
+# ==========================================
+# Circles — Tx-Based Social Groups
+# ==========================================
+
+from services.circles import circle_service
+
+class CreateCircleRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=50)
+    description: str = Field("", max_length=500)
+    min_volume_24h: float = Field(0.0, ge=0)
+
+class CreateCirclePostRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=2000)
+    post_type: str = Field("analysis")
+    linked_trade_id: str = Field(...)
+
+class VoteRequest(BaseModel):
+    vote: int = Field(..., ge=-1, le=1)
+
+
+@app.post("/circles")
+async def create_circle(
+    req: CreateCircleRequest,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """Create a new Circle (requires minimum trade history)."""
+    try:
+        circle = circle_service.create_circle(
+            creator_id=auth.agent_id,
+            name=req.name,
+            description=req.description,
+            min_volume_24h=req.min_volume_24h,
+        )
+        return {"success": True, "circle": circle}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/circles")
+async def list_circles(limit: int = 50, offset: int = 0):
+    """List all circles."""
+    circles = circle_service.list_circles(limit=limit, offset=offset)
+    return {"circles": circles}
+
+
+@app.get("/circles/{circle_id}")
+async def get_circle(circle_id: str):
+    """Get circle details."""
+    try:
+        circle = circle_service.get_circle(circle_id)
+        members = circle_service.get_members(circle_id)
+        circle['members'] = members
+        return circle
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/circles/{circle_id}/join")
+async def join_circle(
+    circle_id: str,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """Join a circle (validates 24h volume against minimum)."""
+    try:
+        result = circle_service.join_circle(circle_id, auth.agent_id)
+        return {"success": True, **result}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post("/circles/{circle_id}/post")
+async def create_circle_post(
+    circle_id: str,
+    req: CreateCirclePostRequest,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """Create a post in a circle (Proof of Trade required)."""
+    agent_name = auth.agent_id  # fallback
+    try:
+        agent_data = await store.get(f"agent:{auth.agent_id}")
+        if agent_data:
+            agent_name = agent_data.get('display_name', auth.agent_id)
+    except Exception:
+        pass
+
+    try:
+        post = circle_service.create_post(
+            circle_id=circle_id,
+            author_id=auth.agent_id,
+            author_name=agent_name,
+            content=req.content,
+            post_type=req.post_type,
+            linked_trade_id=req.linked_trade_id,
+        )
+        return {"success": True, "post": post}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/circles/{circle_id}/posts")
+async def get_circle_posts(circle_id: str, limit: int = 50, offset: int = 0):
+    """Get posts for a circle."""
+    posts = circle_service.get_posts(circle_id, limit=limit, offset=offset)
+    return {"posts": posts}
+
+
+@app.post("/circles/{circle_id}/posts/{post_id}/vote")
+async def vote_circle_post(
+    circle_id: str,
+    post_id: str,
+    req: VoteRequest,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """Vote on a post (Sharpe-weighted)."""
+    try:
+        result = circle_service.vote_post(post_id, auth.agent_id, req.vote)
+        return {"success": True, **result}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/agents/{agent_id}/circles")
+async def get_agent_circles(agent_id: str):
+    """Get circles an agent belongs to."""
+    circles = circle_service.get_agent_circles(agent_id)
+    return {"circles": circles}
+
+
+# ============================================================
+# === Phase 4: YAML Deploy API + Anti-Abuse ==================
+# ============================================================
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # 降级: 仅支持 JSON deploy
+
+DEPLOY_SCHEMA = {
+    "type": "object",
+    "required": ["name", "wallet_address"],
+    "properties": {
+        "name":              {"type": "string", "maxLength": 50},
+        "wallet_address":    {"type": "string", "maxLength": 100},
+        "bio":               {"type": "string", "maxLength": 500},
+        "strategy":          {"type": "string", "enum": ["momentum", "mean_reversion", "trend_following"]},
+        "markets":           {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+        "risk_level":        {"type": "string", "enum": ["conservative", "moderate", "degen"]},
+        "heartbeat":         {"type": "integer", "enum": [10, 30, 60]},
+        "auto_broadcast":    {"type": "boolean"},
+        "social": {
+            "type": "object",
+            "properties": {
+                "auto_join_circles": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+}
+
+# 风险等级 → 运行时参数映射
+_RISK_PRESETS = {
+    "conservative": {"max_position_size": 50,  "min_confidence": 0.75, "exploration_rate": 0.03},
+    "moderate":     {"max_position_size": 100, "min_confidence": 0.60, "exploration_rate": 0.10},
+    "degen":        {"max_position_size": 200, "min_confidence": 0.40, "exploration_rate": 0.25},
+}
+
+# Anti-Sybil: 相同钱包前缀限制
+_DEPLOY_MIN_BALANCE = 100.0   # 部署税 — 最低余额
+_SYBIL_PREFIX_LEN = 8         # 检查钱包前 N 个字符
+_deployed_prefixes: Dict[str, int] = {}  # prefix -> count
+_MAX_SAME_PREFIX = 3           # 相同前缀最多 3 个 agent
+
+
+class DeployRequest(BaseModel):
+    """YAML deploy 请求体"""
+    yaml_config: Optional[str] = Field(None, description="YAML configuration string")
+    # 也允许直接 JSON
+    name: Optional[str] = Field(None, max_length=50)
+    wallet_address: Optional[str] = Field(None, max_length=100)
+    bio: Optional[str] = Field(None, max_length=500)
+    strategy: Optional[str] = "momentum"
+    markets: Optional[List[str]] = None
+    risk_level: Optional[str] = "moderate"
+    heartbeat: Optional[int] = 60
+    auto_broadcast: Optional[bool] = True
+    social: Optional[dict] = None
+
+
+async def get_deploy_schema():
+    """返回 Agent 部署的 JSON Schema (实际定义，被前向路由调用)。"""
+    return {
+        "schema": DEPLOY_SCHEMA,
+        "example_yaml": (
+            "name: my-alpha-bot\n"
+            "wallet_address: 0x1234...abcd\n"
+            "strategy: momentum\n"
+            "markets:\n"
+            "  - BTC-PERP\n"
+            "  - ETH-PERP\n"
+            "risk_level: moderate\n"
+            "heartbeat: 30\n"
+            "social:\n"
+            "  auto_join_circles:\n"
+            "    - btc-maximalists\n"
+        ),
+    }
+
+
+@app.post("/agents/deploy")
+async def deploy_agent(req: DeployRequest):
+    """
+    一键部署 Agent — 支持 YAML 或 JSON 配置。
+
+    流程: 解析配置 → 注册 → 充值 → 启动运行时 → 自动加入 Circles → 发帖
+    """
+    # 1. 解析配置
+    if req.yaml_config:
+        if _yaml is None:
+            raise HTTPException(422, "YAML support not installed. Use JSON fields instead.")
+        try:
+            config = _yaml.safe_load(req.yaml_config)
+            if not isinstance(config, dict):
+                raise HTTPException(422, "YAML must be a mapping")
+        except _yaml.YAMLError as e:
+            raise HTTPException(422, f"Invalid YAML: {e}")
+    else:
+        config = {
+            "name": req.name,
+            "wallet_address": req.wallet_address,
+            "bio": req.bio,
+            "strategy": req.strategy,
+            "markets": req.markets,
+            "risk_level": req.risk_level,
+            "heartbeat": req.heartbeat,
+            "auto_broadcast": req.auto_broadcast,
+            "social": req.social,
+        }
+
+    name = config.get("name")
+    wallet = config.get("wallet_address")
+    if not name or not wallet:
+        raise HTTPException(422, "name and wallet_address are required")
+
+    # 2. Anti-Sybil: 相同钱包前缀检测
+    prefix = wallet[:_SYBIL_PREFIX_LEN].lower()
+    current_count = _deployed_prefixes.get(prefix, 0)
+    if current_count >= _MAX_SAME_PREFIX:
+        raise HTTPException(
+            429,
+            f"Too many agents with similar wallet prefix ({prefix}...). "
+            f"Max {_MAX_SAME_PREFIX} agents per prefix group."
+        )
+
+    # 3. 注册 Agent (复用现有 /agents/register 逻辑)
+    existing = store.get_agent_by_wallet(wallet)
+    if existing:
+        raise HTTPException(409, f"Wallet already registered as {existing.agent_id}")
+
+    agent = store.create_agent(
+        wallet_address=wallet,
+        display_name=name,
+        twitter_handle=None,
+        bio=config.get("bio"),
+    )
+
+    agent_comm.register(
+        agent_id=agent.agent_id,
+        name=name,
+        specialties=["trading"],
+    )
+
+    raw_key, api_key = api_key_store.create_key(
+        agent_id=agent.agent_id,
+        name="default",
+        scopes=["read", "write"],
+    )
+
+    # 4. 部署税检查 + 自动充值 (覆盖手续费)
+    balance_info = settlement_engine.get_balance(agent.agent_id)
+    current_balance = balance_info.available if balance_info else 0
+    if current_balance < _DEPLOY_MIN_BALANCE:
+        # 多充 10% 覆盖注册/交易手续费
+        top_up = _DEPLOY_MIN_BALANCE * 1.1 - current_balance
+        settlement_engine.deposit(agent.agent_id, max(top_up, _DEPLOY_MIN_BALANCE))
+
+    # 5. 启动运行时
+    risk = _RISK_PRESETS.get(config.get("risk_level", "moderate"), _RISK_PRESETS["moderate"])
+    markets = config.get("markets") or ["BTC-PERP", "ETH-PERP"]
+    heartbeat = config.get("heartbeat", 60)
+    if heartbeat not in (10, 30, 60):
+        heartbeat = 60
+
+    rt_config = AgentConfig(
+        agent_id=agent.agent_id,
+        heartbeat_interval=heartbeat,
+        min_confidence=risk["min_confidence"],
+        max_position_size=risk["max_position_size"],
+        markets=markets,
+        strategy=config.get("strategy", "momentum"),
+        auto_broadcast=config.get("auto_broadcast", True),
+        exploration_rate=risk["exploration_rate"],
+    )
+    agent_runtime.register_agent(rt_config)
+    await agent_runtime.start_agent(agent.agent_id)
+
+    # 6. 自动加入 Circles
+    joined_circles = []
+    social_cfg = config.get("social") or {}
+    auto_join = social_cfg.get("auto_join_circles") or []
+    for circle_name in auto_join[:5]:  # 最多自动加入 5 个
+        try:
+            circles = circle_service.list_circles()
+            match = next((c for c in circles if c["name"].lower() == circle_name.lower()), None)
+            if match:
+                circle_service.join_circle(match["circle_id"], agent.agent_id)
+                joined_circles.append(match["name"])
+        except (ValueError, Exception) as e:
+            logger.debug(f"Auto-join circle '{circle_name}' failed: {e}")
+
+    # 7. 在 #newcomers circle 自动发帖 (如果存在)
+    try:
+        circles = circle_service.list_circles()
+        newcomers = next((c for c in circles if "newcomer" in c["name"].lower()), None)
+        if newcomers:
+            if agent.agent_id not in [m["agent_id"] for m in circle_service.get_members(newcomers["circle_id"])]:
+                try:
+                    circle_service.join_circle(newcomers["circle_id"], agent.agent_id)
+                except ValueError:
+                    pass
+            try:
+                circle_service.create_post(
+                    circle_id=newcomers["circle_id"],
+                    author_id=agent.agent_id,
+                    content=f"New agent deployed! Strategy: {config.get('strategy', 'momentum')}, watching {', '.join(markets)}",
+                    post_type="system",
+                    linked_trade_id=f"deploy_{agent.agent_id}",
+                )
+            except ValueError:
+                pass
+    except Exception:
+        pass
+
+    # 更新 Sybil 计数
+    _deployed_prefixes[prefix] = current_count + 1
+
+    # 广播新 Agent
+    await manager.broadcast({
+        "type": "new_agent",
+        "data": agent.to_dict()
+    })
+
+    return {
+        "success": True,
+        "agent": agent.to_dict(),
+        "api_key": raw_key,
+        "runtime": {
+            "status": "running",
+            "heartbeat": heartbeat,
+            "strategy": config.get("strategy", "momentum"),
+            "markets": markets,
+            "risk_level": config.get("risk_level", "moderate"),
+        },
+        "circles_joined": joined_circles,
     }
 
 

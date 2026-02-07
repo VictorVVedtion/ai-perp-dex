@@ -12,7 +12,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Callable, Any
+from typing import Optional, Dict, List, Callable, Any, Awaitable
 from enum import Enum
 import random
 
@@ -43,6 +43,7 @@ class AgentConfig:
     markets: List[str] = field(default_factory=lambda: ["BTC-PERP", "ETH-PERP"])
     strategy: str = "momentum"          # 策略类型
     auto_broadcast: bool = True         # 自动广播思考
+    exploration_rate: float = 0.1       # 无强信号时的探索下单概率
 
 
 @dataclass
@@ -84,7 +85,14 @@ class AgentBrain:
         try:
             # 获取当前价格
             prices = price_feed.get_all_prices()
-            current_price = prices.get(market, {}).get("price", 0)
+            if asyncio.iscoroutine(prices):
+                prices = await prices
+
+            raw_price = prices.get(market) if isinstance(prices, dict) else None
+            if isinstance(raw_price, dict):
+                current_price = float(raw_price.get("price", 0) or 0)
+            else:
+                current_price = float(getattr(raw_price, "price", 0) or 0)
             
             if current_price == 0:
                 return MarketAnalysis(
@@ -170,11 +178,34 @@ class AgentBrain:
         # 找到最高信心的信号
         best_signal = None
         for analysis in analyses:
-            if analysis.confidence >= self.config.min_confidence:
+            # 仅将可执行方向信号纳入候选；wait 不应阻塞探索分支
+            if analysis.signal in {"long", "short"} and analysis.confidence >= self.config.min_confidence:
                 if best_signal is None or analysis.confidence > best_signal.confidence:
                     best_signal = analysis
         
         if best_signal is None:
+            # Agent-only 模式下保持低频探索，避免长期只“思考不执行”。
+            candidates = [a for a in analyses if a.price > 0]
+            if candidates and random.random() < self.config.exploration_rate:
+                probe = max(candidates, key=lambda a: a.strength)
+                if probe.trend == "bullish":
+                    side = "long"
+                elif probe.trend == "bearish":
+                    side = "short"
+                else:
+                    side = random.choice(["long", "short"])
+
+                return TradeDecision(
+                    action=f"open_{side}",
+                    market=probe.market,
+                    size=max(10.0, self.config.max_position_size * 0.2),
+                    confidence=min(0.95, self.config.min_confidence + 0.05),
+                    reasoning=(
+                        f"Exploratory {side} entry on {probe.market}. "
+                        f"No dominant signal; keeping market presence with limited size."
+                    ),
+                )
+
             return TradeDecision(
                 action="hold",
                 market="",
@@ -200,19 +231,77 @@ class AgentBrain:
         )
 
 
+MIN_SOCIAL_BALANCE = 100.0   # 余额低于此值的 Agent 不参与社交
+SOCIAL_TICK_INTERVAL = 10    # 每 10 个心跳执行一次社交检查
+
+
 class AgentRuntime:
     """
     Agent 运行时管理器
-    
+
     管理多个 agent 的生命周期，协调心跳和决策
     """
-    
+
     def __init__(self):
         self.agents: Dict[str, AgentConfig] = {}
         self.states: Dict[str, AgentState] = {}
         self.brains: Dict[str, AgentBrain] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
         self._running = False
+        self._realtime_message_hook: Optional[Callable[[dict], Awaitable[None]]] = None
+        self._trade_executor_hook: Optional[
+            Callable[[str, str, str, float, float, str], Awaitable[dict]]
+        ] = None
+        self._heartbeat_counts: Dict[str, int] = {}
+        self._last_social_tick: Dict[str, datetime] = {}
+
+    def set_realtime_message_hook(
+        self,
+        hook: Optional[Callable[[dict], Awaitable[None]]]
+    ) -> None:
+        """
+        Set an async hook for runtime-generated chat messages.
+        The API layer uses this to bridge runtime thoughts/signals into WebSocket.
+        """
+        self._realtime_message_hook = hook
+
+    def set_trade_executor_hook(
+        self,
+        hook: Optional[Callable[[str, str, str, float, float, str], Awaitable[dict]]]
+    ) -> None:
+        """
+        Set an async hook to execute runtime trade decisions.
+        Signature: (agent_id, market, side, size_usdc, confidence, reasoning) -> result dict.
+        """
+        self._trade_executor_hook = hook
+
+    async def _emit_realtime_message(
+        self,
+        sender_id: str,
+        content: str,
+        message_type: str,
+        metadata: Optional[dict] = None,
+        channel: str = "public",
+        message_id: Optional[str] = None,
+    ) -> None:
+        if not self._realtime_message_hook:
+            return
+
+        payload = {
+            "id": message_id or f"runtime_{datetime.now().timestamp()}",
+            "sender_id": sender_id,
+            "sender_name": sender_id,
+            "channel": channel,
+            "message_type": message_type,
+            "content": content,
+            "metadata": metadata or {},
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        try:
+            await self._realtime_message_hook(payload)
+        except Exception as e:
+            logger.warning(f"Failed to emit runtime realtime message: {e}")
     
     def register_agent(self, config: AgentConfig) -> bool:
         """注册一个 agent 到运行时"""
@@ -243,10 +332,17 @@ class AgentRuntime:
         # 广播启动消息
         config = self.agents[agent_id]
         if config.auto_broadcast:
-            chat_db.save_message(
+            start_content = f"Agent activated. Strategy: {config.strategy}. Monitoring: {', '.join(config.markets)}"
+            msg_id = chat_db.save_message(
                 sender_id=agent_id,
-                content=f"Agent activated. Strategy: {config.strategy}. Monitoring: {', '.join(config.markets)}",
+                content=start_content,
                 message_type="system"
+            )
+            await self._emit_realtime_message(
+                sender_id=agent_id,
+                content=start_content,
+                message_type="system",
+                message_id=msg_id,
             )
         
         logger.info(f"Agent {agent_id} started")
@@ -270,10 +366,17 @@ class AgentRuntime:
         # 广播停止消息
         config = self.agents[agent_id]
         if config.auto_broadcast:
-            chat_db.save_message(
+            stop_content = "Agent deactivated. Going offline."
+            msg_id = chat_db.save_message(
                 sender_id=agent_id,
-                content="Agent deactivated. Going offline.",
+                content=stop_content,
                 message_type="system"
+            )
+            await self._emit_realtime_message(
+                sender_id=agent_id,
+                content=stop_content,
+                message_type="system",
+                message_id=msg_id,
             )
         
         logger.info(f"Agent {agent_id} stopped")
@@ -303,7 +406,7 @@ class AgentRuntime:
                 # 广播思考过程
                 if config.auto_broadcast and decision:
                     thought = self._format_thought(analyses, decision)
-                    chat_db.save_message(
+                    msg_id = chat_db.save_message(
                         sender_id=agent_id,
                         content=thought,
                         message_type="thought",
@@ -313,15 +416,31 @@ class AgentRuntime:
                             "confidence": decision.confidence
                         }
                     )
+                    await self._emit_realtime_message(
+                        sender_id=agent_id,
+                        content=thought,
+                        message_type="thought",
+                        metadata={
+                            "markets": [a.market for a in analyses],
+                            "decision": decision.action,
+                            "confidence": decision.confidence,
+                        },
+                        message_id=msg_id,
+                    )
                 
                 # 如果有交易决策，执行它
                 if decision and decision.action.startswith("open_"):
                     self.states[agent_id] = AgentState.EXECUTING
                     await self._execute_trade(agent_id, decision)
-                
+
+                # 社交 tick — 每 SOCIAL_TICK_INTERVAL 个心跳检查一次
+                self._heartbeat_counts[agent_id] = self._heartbeat_counts.get(agent_id, 0) + 1
+                if self._heartbeat_counts[agent_id] % SOCIAL_TICK_INTERVAL == 0:
+                    await self._social_tick(agent_id)
+
                 # 恢复活跃状态
                 self.states[agent_id] = AgentState.ACTIVE
-                
+
                 # 等待下一个心跳
                 await asyncio.sleep(config.heartbeat_interval)
                 
@@ -354,26 +473,183 @@ class AgentRuntime:
     
     async def _execute_trade(self, agent_id: str, decision: TradeDecision):
         """执行交易决策"""
-        # TODO: 实际调用交易 API
-        # 目前只是记录
-        logger.info(f"Agent {agent_id} would execute: {decision.action} {decision.market} ${decision.size}")
-        
-        # 广播交易
+        logger.info(f"Agent {agent_id} executing decision: {decision.action} {decision.market} ${decision.size}")
+
         config = self.agents[agent_id]
-        if config.auto_broadcast:
-            side = "LONG" if "long" in decision.action else "SHORT"
-            chat_db.save_message(
-                sender_id=agent_id,
-                content=f"Opening {side} {decision.market} | Size: ${decision.size:.0f} | Confidence: {decision.confidence:.0%}",
-                message_type="signal",
-                metadata={
+        side = "LONG" if "long" in decision.action else "SHORT"
+
+        if not self._trade_executor_hook:
+            if config.auto_broadcast:
+                signal_content = (
+                    f"[SIMULATED] Opening {side} {decision.market} | "
+                    f"Size: ${decision.size:.0f} | Confidence: {decision.confidence:.0%}"
+                )
+                metadata = {
                     "asset": decision.market,
                     "direction": side.lower(),
                     "confidence": decision.confidence,
-                    "size": decision.size
+                    "size": decision.size,
+                    "simulated": True,
                 }
+                msg_id = chat_db.save_message(
+                    sender_id=agent_id,
+                    content=signal_content,
+                    message_type="signal",
+                    metadata=metadata
+                )
+                await self._emit_realtime_message(
+                    sender_id=agent_id,
+                    content=signal_content,
+                    message_type="signal",
+                    metadata=metadata,
+                    message_id=msg_id,
+                )
+            return
+
+        try:
+            result = await self._trade_executor_hook(
+                agent_id,
+                decision.market,
+                side.lower(),
+                float(decision.size),
+                float(decision.confidence),
+                decision.reasoning,
+            )
+        except Exception as e:
+            logger.error(f"Runtime trade execution failed for {agent_id}: {e}")
+            if config.auto_broadcast:
+                failure_content = f"Trade execution failed: {e}"
+                msg_id = chat_db.save_message(
+                    sender_id=agent_id,
+                    content=failure_content,
+                    message_type="system",
+                    metadata={"event": "trade_failed"}
+                )
+                await self._emit_realtime_message(
+                    sender_id=agent_id,
+                    content=failure_content,
+                    message_type="system",
+                    metadata={"event": "trade_failed"},
+                    message_id=msg_id,
+                )
+            return
+
+        if config.auto_broadcast:
+            success = bool(result.get("success")) if isinstance(result, dict) else True
+            intent = result.get("intent", {}) if isinstance(result, dict) else {}
+            if success:
+                signal_content = (
+                    f"Executed {side} {decision.market} | Size: ${decision.size:.0f} | "
+                    f"Confidence: {decision.confidence:.0%}"
+                )
+                if intent.get("intent_id"):
+                    signal_content += f" | Intent: {intent['intent_id']}"
+                message_type = "signal"
+                extra = {"event": "trade_executed"}
+            else:
+                signal_content = f"Execution rejected: {result.get('error', 'unknown error')}"
+                message_type = "system"
+                extra = {"event": "trade_rejected"}
+
+            metadata = {
+                "asset": decision.market,
+                "direction": side.lower(),
+                "confidence": decision.confidence,
+                "size": decision.size,
+                "result": result if isinstance(result, dict) else {"success": success},
+                **extra,
+            }
+            msg_id = chat_db.save_message(
+                sender_id=agent_id,
+                content=signal_content,
+                message_type=message_type,
+                metadata=metadata
+            )
+            await self._emit_realtime_message(
+                sender_id=agent_id,
+                content=signal_content,
+                message_type=message_type,
+                metadata=metadata,
+                message_id=msg_id,
             )
     
+    async def _social_tick(self, agent_id: str):
+        """
+        Proof-of-Trade 社交行为 — 只在有交易可以背书时才发帖。
+
+        规则:
+        - 余额 < MIN_SOCIAL_BALANCE → 沉默
+        - 最近没有交易 → 没有资格发帖
+        - 频率 ∝ reputation (Sharpe 高的 Agent 可以更频繁)
+        """
+        try:
+            # 惰性导入，避免循环依赖
+            from services.settlement import settlement_engine
+            from services.circles import circle_service
+            from services.position_manager import position_manager
+
+            # 余额检查 — 穷 Agent 沉默
+            balance_info = settlement_engine.get_balance(agent_id)
+            if not balance_info or balance_info.available < MIN_SOCIAL_BALANCE:
+                return
+
+            # 检查最近交易 — 没交易 = 没资格发帖
+            last_tick = self._last_social_tick.get(agent_id, datetime.min)
+            open_positions = position_manager.get_positions(agent_id)
+            if not open_positions:
+                return
+
+            # 找到最近一笔仓位
+            latest = max(open_positions, key=lambda p: p.get("opened_at", ""))
+            if not latest:
+                return
+
+            # 找相关 Circle 并发帖
+            asset = latest.get("asset", "")
+            circle = circle_service.find_relevant_circle(asset)
+            if not circle:
+                return
+
+            # 检查是否是 Circle 成员
+            members = circle_service.get_members(circle["circle_id"])
+            member_ids = [m["agent_id"] for m in members] if isinstance(members, list) else []
+            if agent_id not in member_ids:
+                # 自动加入
+                try:
+                    circle_service.join_circle(circle["circle_id"], agent_id)
+                except ValueError:
+                    return  # 不满足准入条件
+
+            # 生成帖子内容
+            side = latest.get("side", "LONG")
+            size = latest.get("size_usdc", 0)
+            pnl = latest.get("unrealized_pnl", 0)
+            leverage = latest.get("leverage", 1)
+
+            content = (
+                f"Holding {side} {asset} | ${size:.0f} @ {leverage}x | "
+                f"PnL: {'+'if pnl >= 0 else ''}{pnl:.2f} USDC"
+            )
+
+            position_id = latest.get("position_id", "")
+            try:
+                circle_service.create_post(
+                    circle_id=circle["circle_id"],
+                    author_id=agent_id,
+                    content=content,
+                    post_type="analysis",
+                    linked_trade_id=position_id,
+                )
+                logger.info(f"[Social] {agent_id} posted to circle {circle['name']}")
+            except ValueError as e:
+                # 速率限制或其他验证失败 — 静默跳过
+                logger.debug(f"[Social] {agent_id} post skipped: {e}")
+
+            self._last_social_tick[agent_id] = datetime.now()
+
+        except Exception as e:
+            logger.warning(f"[Social] _social_tick error for {agent_id}: {e}")
+
     def get_status(self, agent_id: str = None) -> Dict[str, Any]:
         """获取 agent 状态"""
         if agent_id:

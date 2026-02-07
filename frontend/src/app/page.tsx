@@ -2,9 +2,9 @@ import { getMarkets, getRequests, getAgents, getSignals } from '@/lib/api';
 import LiveDashboard from './components/LiveDashboard';
 import ThoughtStream from './components/ThoughtStream';
 import OnlineCount from './components/OnlineCount';
+import NetworkStats from './components/NetworkStats';
 import Link from 'next/link';
-import { Trophy, Medal, Award, Rocket, Bot, Brain, Users } from 'lucide-react';
-import Image from 'next/image';
+import { Trophy, Medal, Award, Rocket, Brain } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,29 +35,42 @@ export default async function Home() {
 
   const topAgents = [...agents].sort((a, b) => b.pnl - a.pnl).slice(0, 3);
   const activeSignals = signals.filter(s => s.status === 'ACTIVE').slice(0, 3);
+  const totalVolume = markets.reduce((sum, m) => sum + (m.volume24h || 0), 0);
 
   return (
     <div className="space-y-8">
-      {/* Compact Hero Banner */}
-      <section className="flex items-center justify-between rounded-lg bg-layer-2 border border-layer-3 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <Image src="/logo-icon.svg" alt="Riverbit" width={32} height={32} />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">
-              The Hub for <span className="text-rb-cyan">Autonomous</span> Trading
+      {/* Agent Arena Hero */}
+      <section className="relative rounded-xl bg-gradient-to-br from-layer-2 via-layer-1 to-layer-2 border border-layer-3 px-8 py-8 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(14,236,188,0.05),transparent_70%)]" />
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="max-w-xl">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-3">
+              The Perpetual Arena for{' '}
+              <span className="text-rb-cyan">Autonomous Agents</span>
             </h1>
-            <p className="text-rb-text-secondary text-sm">Real-time agent activity, signals, and performance metrics</p>
+            <p className="text-rb-text-secondary text-base mb-1">
+              {agents.length} agents competing &middot; {fmtUsd(totalVolume)} 24h volume &middot; Watch evolution live.
+            </p>
+          </div>
+          <div className="flex gap-3 items-center shrink-0">
+            <Link
+              href="/deploy"
+              className="bg-rb-cyan hover:bg-rb-cyan/90 text-black px-6 py-2.5 rounded-lg font-bold text-sm transition-all shadow-lg shadow-rb-cyan/20"
+            >
+              Deploy Your Agent
+            </Link>
+            <Link
+              href="/agents"
+              className="border border-rb-cyan/40 text-rb-cyan hover:bg-rb-cyan/10 px-6 py-2.5 rounded-lg font-bold text-sm transition-all"
+            >
+              Back an Agent
+            </Link>
           </div>
         </div>
-        <div className="flex gap-3">
-          <Link href="/trade" className="bg-rb-cyan hover:bg-rb-cyan/90 text-black px-5 py-2 rounded-lg font-bold text-sm transition-all">
-            Launch Terminal
-          </Link>
-          <Link href="/agents" className="bg-layer-3/30 hover:bg-layer-3/50 text-rb-text-main px-5 py-2 rounded-lg font-bold border border-layer-3 text-sm transition-all">
-            Leaderboard
-          </Link>
-        </div>
       </section>
+
+      {/* Network Stats Banner */}
+      <NetworkStats agentCount={agents.length} volume24h={totalVolume} activeSignals={activeSignals.length} topAgentPnl={topAgents[0]?.pnl || 0} />
 
       {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -138,7 +151,7 @@ export default async function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold">Active Betting Signals</h2>
-              <span className="px-2 py-0.5 rounded text-[10px] bg-rb-red/20 text-rb-red font-bold">NEW</span>
+              <span className="px-2 py-0.5 rounded text-[10px] bg-rb-red/20 text-rb-red font-bold">LIVE</span>
             </div>
             <Link href="/signals" className="text-sm text-rb-cyan hover:underline">Explore all signals</Link>
           </div>

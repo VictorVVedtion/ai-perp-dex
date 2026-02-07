@@ -1,5 +1,5 @@
 import { API_BASE_URL, ENDPOINTS } from './config';
-import type { ApiIntent, ApiAgent, ApiSignal, ApiLeader, ApiChatMessage, ApiThought } from './types';
+import type { ApiIntent, ApiAgent, ApiSignal, ApiLeader, ApiChatMessage, ApiThought, ApiCircle, ApiCirclePost } from './types';
 
 const API = API_BASE_URL;
 
@@ -267,8 +267,8 @@ export async function getSkills(): Promise<Skill[]> {
       subscribers: x.sales_count || x.subscribers_count || 0,
       stats: {
         winRate: (x.performance?.win_rate ?? x.stats?.win_rate ?? 0.5) * 100,
-        totalReturn: x.performance?.total_return ?? x.stats?.total_return ?? (Math.random() * 200 - 50),
-        sharpeRatio: x.performance?.sharpe ?? x.stats?.sharpe_ratio ?? 1.5
+        totalReturn: x.performance?.total_return ?? x.stats?.total_return ?? 0,
+        sharpeRatio: x.performance?.sharpe ?? x.stats?.sharpe_ratio ?? 0
       }
     }));
   } catch (e) {
@@ -295,8 +295,8 @@ export async function getSkill(id: string): Promise<Skill | null> {
       subscribers: x.sales_count || x.subscribers_count || 0,
       stats: {
         winRate: (x.performance?.win_rate ?? x.stats?.win_rate ?? 0.5) * 100,
-        totalReturn: x.performance?.total_return ?? x.stats?.total_return ?? (Math.random() * 200 - 50),
-        sharpeRatio: x.performance?.sharpe ?? x.stats?.sharpe_ratio ?? 1.5
+        totalReturn: x.performance?.total_return ?? x.stats?.total_return ?? 0,
+        sharpeRatio: x.performance?.sharpe ?? x.stats?.sharpe_ratio ?? 0
       }
     };
   } catch (e) {
@@ -472,5 +472,106 @@ export async function sendChatMessage(content: string, messageType: string = 'th
   } catch (e) {
     console.error('sendChatMessage error:', e);
     return false;
+  }
+}
+
+// ==========================================
+// Circles API
+// ==========================================
+
+export async function getCircles(limit: number = 50): Promise<ApiCircle[]> {
+  try {
+    const r = await fetch(`${API}/circles?limit=${limit}`, { cache: 'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return data.circles || [];
+  } catch (e) {
+    console.error('getCircles error:', e);
+    return [];
+  }
+}
+
+export async function getCircle(circleId: string): Promise<ApiCircle | null> {
+  try {
+    const r = await fetch(`${API}/circles/${circleId}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    console.error('getCircle error:', e);
+    return null;
+  }
+}
+
+export async function getCirclePosts(circleId: string, limit: number = 50): Promise<ApiCirclePost[]> {
+  try {
+    const r = await fetch(`${API}/circles/${circleId}/posts?limit=${limit}`, { cache: 'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return data.posts || [];
+  } catch (e) {
+    console.error('getCirclePosts error:', e);
+    return [];
+  }
+}
+
+export async function joinCircle(circleId: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${API}/circles/${circleId}/join`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return r.ok;
+  } catch (e) {
+    console.error('joinCircle error:', e);
+    return false;
+  }
+}
+
+export async function postToCircle(
+  circleId: string,
+  content: string,
+  postType: string,
+  linkedTradeId: string
+): Promise<boolean> {
+  try {
+    const r = await fetch(`${API}/circles/${circleId}/post`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        content,
+        post_type: postType,
+        linked_trade_id: linkedTradeId,
+      }),
+    });
+    return r.ok;
+  } catch (e) {
+    console.error('postToCircle error:', e);
+    return false;
+  }
+}
+
+export async function votePost(circleId: string, postId: string, vote: number): Promise<boolean> {
+  try {
+    const r = await fetch(`${API}/circles/${circleId}/posts/${postId}/vote`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ vote }),
+    });
+    return r.ok;
+  } catch (e) {
+    console.error('votePost error:', e);
+    return false;
+  }
+}
+
+export async function getAgentCircles(agentId: string): Promise<ApiCircle[]> {
+  try {
+    const r = await fetch(`${API}/agents/${agentId}/circles`, { cache: 'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return data.circles || [];
+  } catch (e) {
+    console.error('getAgentCircles error:', e);
+    return [];
   }
 }

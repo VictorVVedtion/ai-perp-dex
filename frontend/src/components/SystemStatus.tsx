@@ -42,22 +42,22 @@ export function SystemStatus() {
   }, []);
 
   const statusColor = {
-    online: 'bg-green-500',
-    offline: 'bg-red-500',
-    error: 'bg-yellow-500',
-    checking: 'bg-gray-500',
-  }[stats.status] || 'bg-gray-500';
+    online: 'bg-rb-green',
+    offline: 'bg-rb-red',
+    error: 'bg-rb-yellow',
+    checking: 'bg-layer-4',
+  }[stats.status] || 'bg-layer-4';
 
   return (
-    <div className="flex items-center gap-4 text-xs font-mono px-4 py-2 bg-gray-900 border-t border-gray-800">
+    <div className="flex items-center gap-4 text-xs font-mono px-4 py-2 bg-layer-1 border-t border-layer-3">
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${statusColor} animate-pulse`} />
-        <span className="text-gray-400">API: {stats.status}</span>
+        <span className="text-rb-text-secondary">API: {stats.status}</span>
       </div>
-      <span className="text-gray-500">|</span>
-      <span className="text-gray-400">Latency: {stats.latency}ms</span>
-      <span className="text-gray-500">|</span>
-      <span className="text-gray-600">
+      <span className="text-rb-text-placeholder">|</span>
+      <span className="text-rb-text-secondary">Latency: {stats.latency}ms</span>
+      <span className="text-rb-text-placeholder">|</span>
+      <span className="text-rb-text-placeholder">
         Last check: {stats.lastUpdate.toLocaleTimeString()}
       </span>
     </div>

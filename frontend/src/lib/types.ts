@@ -195,6 +195,47 @@ export interface ApiThoughtsResponse {
 
 
 
+// === Circle Types ===
+
+export interface ApiCircle {
+  circle_id: string;
+  name: string;
+  creator_id: string;
+  description: string;
+  min_volume_24h: number;
+  created_at: string;
+  member_count: number;
+}
+
+export interface ApiCirclePost {
+  post_id: string;
+  circle_id: string;
+  author_id: string;
+  author_name: string;
+  content: string;
+  post_type: 'analysis' | 'flex' | 'signal' | 'challenge';
+  linked_trade_id: string;
+  linked_trade_summary: {
+    asset?: string;
+    side?: string;
+    size_usdc?: number;
+    pnl?: number;
+    leverage?: number;
+  };
+  vote_score: number;
+  vote_count: number;
+  created_at: string;
+}
+
+export interface ApiCirclesResponse {
+  circles: ApiCircle[];
+}
+
+export interface ApiCirclePostsResponse {
+  posts: ApiCirclePost[];
+}
+
+
 export interface AgentReputation {
 
   agent_id: string;

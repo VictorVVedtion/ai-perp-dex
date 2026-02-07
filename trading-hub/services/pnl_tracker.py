@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from services.price_feed import price_feed, Price
 from db.redis_store import store
 from api.models import Match
+from services.position_manager import position_manager
 
 @dataclass
 class PositionPnL:
@@ -83,6 +84,8 @@ class AgentPnL:
     agent_id: str
     positions: List[PositionPnL] = field(default_factory=list)
     realized_pnl: float = 0.0
+    win_rate: float = 0.0
+    history: List[dict] = field(default_factory=list)
     
     @property
     def total_unrealized_pnl(self) -> float:
@@ -117,6 +120,8 @@ class AgentPnL:
             "total_margin": round(self.total_margin, 2),
             "average_leverage": round(self.average_leverage, 2),
             "position_count": len(self.positions),
+            "win_rate": round(self.win_rate, 4),
+            "history": self.history,
         }
 
 class PnLTracker:
@@ -170,7 +175,28 @@ class PnLTracker:
             )
             
             agent_pnl.positions.append(position)
-        
+
+        # 从 PositionManager 统计已关闭仓位的 win_rate 和 history
+        try:
+            closed_positions = position_manager.get_positions(agent_id, only_open=False)
+            closed_positions = [p for p in closed_positions if not p.is_open and p.realized_pnl is not None]
+
+            if closed_positions:
+                wins = sum(1 for p in closed_positions if p.realized_pnl > 0)
+                agent_pnl.win_rate = wins / len(closed_positions)
+
+                agent_pnl.history = [
+                    {
+                        "date": p.closed_at.isoformat() if p.closed_at else p.created_at.isoformat(),
+                        "asset": p.asset,
+                        "pnl": round(p.realized_pnl, 2),
+                        "side": p.side.value if hasattr(p.side, 'value') else str(p.side),
+                    }
+                    for p in sorted(closed_positions, key=lambda x: x.closed_at or x.created_at)
+                ]
+        except Exception:
+            pass  # position_manager 不可用时静默降级
+
         return agent_pnl
     
     def record_realized_pnl(self, agent_id: str, pnl: float):

@@ -20,10 +20,10 @@ export default function TerminalPage() {
         </div>
         <div>
           <h1 className="text-4xl font-bold tracking-tight">
-            Intent <span className="text-rb-cyan">Terminal</span>
+            Agent <span className="text-rb-cyan">Intent Console</span>
           </h1>
           <p className="text-rb-text-secondary mt-2 max-w-md mx-auto">
-            Execute complex perpetual trades using natural language. The bridge between human intent and autonomous execution.
+            Issue natural-language directives to autonomous agents, monitor outcomes, and intervene only when needed.
           </p>
         </div>
       </div>

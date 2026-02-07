@@ -12,33 +12,48 @@ interface Agent {
   total_volume: number;
   reputation_score: number;
   status: string;
+  // Composite score fields
+  sharpe_ratio?: number;
+  age_days?: number;
+  followers?: number;
+  signal_accuracy?: number;
 }
 
 import { API_BASE_URL } from '@/lib/config';
 import { formatUsd } from '@/lib/utils';
 const API = API_BASE_URL;
 
-// Rank badge component
+// Composite Arena Score: Sharpe 40% + Survival 20% + PnL 20% + Followers 10% + Signals 10%
+function computeArenaScore(agent: Agent): number {
+  const sharpe = Math.max(0, agent.sharpe_ratio || agent.reputation_score || 0);
+  const survival = Math.min((agent.age_days || 1) / 30, 1); // Normalize to 30 days
+  const pnl = Math.max(0, (agent.pnl || 0) / 1000); // Normalize to $1000
+  const followers = Math.min((agent.followers || 0) / 10, 1); // Normalize to 10
+  const signals = agent.signal_accuracy || 0;
+
+  return (sharpe * 0.4) + (survival * 0.2) + (pnl * 0.2) + (followers * 0.1) + (signals * 0.1);
+}
+
 const RankBadge = ({ rank }: { rank: number }) => {
-  if (rank === 0) return <Trophy className="w-5 h-5 text-yellow-400" />;
-  if (rank === 1) return <Medal className="w-5 h-5 text-gray-300" />;
-  if (rank === 2) return <Award className="w-5 h-5 text-amber-600" />;
-  return <Bot className="w-5 h-5 text-zinc-400" />;
+  if (rank === 0) return <Trophy className="w-5 h-5 text-rb-yellow" />;
+  if (rank === 1) return <Medal className="w-5 h-5 text-rb-text-main" />;
+  if (rank === 2) return <Award className="w-5 h-5 text-rb-yellow" />;
+  return <Bot className="w-5 h-5 text-rb-text-secondary" />;
 };
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<'arena_score' | 'pnl' | 'volume'>('arena_score');
 
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        // Try leaderboard first, fallback to agents
         let res = await fetch(`${API}/leaderboard`);
         if (!res.ok) {
           res = await fetch(`${API}/agents`);
         }
-        
+
         if (res.ok) {
           const data = await res.json();
           const agentList = data.leaderboard || data.agents || [];
@@ -52,34 +67,31 @@ export default function AgentsPage() {
     };
 
     fetchAgents();
-    const interval = setInterval(fetchAgents, 30000); // Refresh every 30s
+    const interval = setInterval(fetchAgents, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  const sortedAgents = [...agents].sort((a, b) => {
+    if (sortBy === 'pnl') return (b.pnl || 0) - (a.pnl || 0);
+    if (sortBy === 'volume') return (b.total_volume || 0) - (a.total_volume || 0);
+    return computeArenaScore(b) - computeArenaScore(a);
+  });
+
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
-      case 'active': return 'text-[#00D4AA] bg-[#00D4AA]/10';
-      case 'idle': return 'text-zinc-400 bg-zinc-400/10';
-      case 'liquidated': return 'text-[#FF6B35] bg-[#FF6B35]/10';
-      default: return 'text-zinc-500 bg-zinc-500/10';
+      case 'active': return 'text-rb-cyan bg-rb-cyan/10';
+      case 'idle': return 'text-rb-text-secondary bg-rb-text-secondary/10';
+      case 'liquidated': return 'text-rb-red bg-rb-red/10';
+      default: return 'text-rb-text-secondary bg-rb-text-secondary/10';
     }
   };
 
-  const getRiskLevel = (score: number) => {
-    if (score >= 0.7) return { label: 'Low', color: 'text-[#00D4AA] bg-[#00D4AA]/10' };
-    if (score >= 0.4) return { label: 'Medium', color: 'text-yellow-400 bg-yellow-400/10' };
-    return { label: 'High', color: 'text-[#FF6B35] bg-[#FF6B35]/10' };
-  };
-
   const totalPnl = agents.reduce((sum, a) => sum + (a.pnl || 0), 0);
-  const avgWinRate = agents.length > 0 
-    ? agents.reduce((sum, a) => sum + (a.reputation_score || 0.5), 0) / agents.length * 100
-    : 0;
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-zinc-500">Loading agents...</div>
+        <div className="text-rb-text-secondary">Loading agents...</div>
       </div>
     );
   }
@@ -88,83 +100,104 @@ export default function AgentsPage() {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold mb-2">Agent Leaderboard</h1>
-          <p className="text-zinc-500">Real-time performance metrics for all autonomous trading agents.</p>
+          <h1 className="text-4xl font-bold mb-2">Agent Arena</h1>
+          <p className="text-rb-text-secondary">Ranked by composite Arena Score: Sharpe 40% + Survival 20% + PnL 20% + Followers 10% + Signals 10%</p>
         </div>
         <div className="flex gap-2">
-          <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 flex items-center gap-2">
-            <span className="text-zinc-500 text-xs font-mono uppercase">Total Agents</span>
+          <div className="bg-layer-3/30 border border-layer-3 rounded-lg px-4 py-2 flex items-center gap-2">
+            <span className="text-rb-text-secondary text-xs font-mono uppercase">Total Agents</span>
             <span className="font-bold">{agents.length}</span>
           </div>
-          <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 flex items-center gap-2">
-            <span className="text-zinc-500 text-xs font-mono uppercase">Total PnL</span>
-            <span className={`font-bold ${totalPnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+          <div className="bg-layer-3/30 border border-layer-3 rounded-lg px-4 py-2 flex items-center gap-2">
+            <span className="text-rb-text-secondary text-xs font-mono uppercase">Net PnL</span>
+            <span className={`font-bold ${totalPnl >= 0 ? 'text-rb-cyan' : 'text-rb-red'}`}>
               {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)}
             </span>
           </div>
         </div>
       </div>
 
+      {/* Sort Controls */}
+      <div className="flex gap-2">
+        {([
+          { key: 'arena_score', label: 'Arena Score' },
+          { key: 'pnl', label: 'PnL' },
+          { key: 'volume', label: 'Volume' },
+        ] as const).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setSortBy(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              sortBy === key
+                ? 'bg-rb-cyan/10 text-rb-cyan border border-rb-cyan/30'
+                : 'text-rb-text-secondary border border-layer-3 hover:border-layer-4'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {agents.length === 0 ? (
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-12 text-center">
+        <div className="bg-layer-2 border border-layer-3 rounded-lg p-12 text-center">
           <div className="flex justify-center mb-4">
-            <Bot className="w-12 h-12 text-zinc-600" />
+            <Bot className="w-12 h-12 text-rb-text-placeholder" />
           </div>
           <h2 className="text-xl font-bold mb-2">No Agents Yet</h2>
-          <p className="text-zinc-500 mb-6">Be the first to register and start trading!</p>
+          <p className="text-rb-text-secondary mb-6">Be the first to deploy and compete!</p>
           <Link
-            href="/join"
-            className="inline-block bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-6 py-3 rounded-lg font-bold"
+            href="/deploy"
+            className="inline-block bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-6 py-3 rounded-lg font-bold"
           >
-            Register as Agent
+            Deploy Agent
           </Link>
         </div>
       ) : (
-        <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="bg-layer-1 border border-layer-3 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500">Agent</th>
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-right">PnL</th>
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-right">Volume</th>
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-right">Trades</th>
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-center">Risk</th>
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-center">Status</th>
-                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500"></th>
+                <tr className="border-b border-layer-3 bg-layer-2">
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary">Agent</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary text-right">Arena Score</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary text-right">PnL</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary text-right">Volume</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary text-right">Trades</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary text-center">Status</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-rb-text-secondary"></th>
                 </tr>
               </thead>
               <tbody>
-                {agents.map((agent, i) => {
-                  const risk = getRiskLevel(agent.reputation_score || 0.5);
+                {sortedAgents.map((agent, i) => {
+                  const score = computeArenaScore(agent);
                   return (
-                    <tr key={agent.agent_id} className="border-b border-zinc-800/50 hover:bg-zinc-900/30 transition-colors">
+                    <tr key={agent.agent_id} className="border-b border-layer-3/50 hover:bg-layer-1 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-lg bg-layer-4 flex items-center justify-center">
                             <RankBadge rank={i} />
                           </div>
                           <div>
-                            <div className="font-bold text-white">{agent.display_name || agent.agent_id}</div>
-                            <div className="text-xs text-zinc-500 font-mono">{agent.agent_id}</div>
+                            <div className="font-bold text-rb-text-main">{agent.display_name || agent.agent_id}</div>
+                            <div className="text-xs text-rb-text-secondary font-mono">{agent.agent_id}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-mono font-bold ${(agent.pnl || 0) >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+                        <span className="font-mono font-bold text-rb-cyan">
+                          {score.toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`font-mono font-bold ${(agent.pnl || 0) >= 0 ? 'text-rb-cyan' : 'text-rb-red'}`}>
                           {(agent.pnl || 0) >= 0 ? '+' : ''}${(agent.pnl || 0).toFixed(2)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-zinc-300">
+                      <td className="px-4 py-3 text-right font-mono text-rb-text-main">
                         {formatUsd(agent.total_volume || 0)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-zinc-300">
+                      <td className="px-4 py-3 text-right font-mono text-rb-text-main">
                         {agent.total_trades || 0}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${risk.color}`}>
-                          {risk.label}
-                        </span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`text-xs font-bold px-2 py-1 rounded ${getStatusColor(agent.status)}`}>
@@ -174,7 +207,7 @@ export default function AgentsPage() {
                       <td className="px-4 py-3 text-right">
                         <Link
                           href={`/agents/${agent.agent_id}`}
-                          className="text-[#00D4AA] hover:text-[#00F0C0] text-sm font-medium"
+                          className="text-rb-cyan hover:text-rb-cyan/90 text-sm font-medium"
                         >
                           View →
                         </Link>

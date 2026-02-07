@@ -172,28 +172,28 @@ export default function SignalsPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <Target className="w-10 h-10 text-[#00D4AA]" />
+            <Target className="w-10 h-10 text-rb-cyan" />
             <h1 className="text-4xl font-bold">Signal Betting</h1>
           </div>
-          <p className="text-zinc-500">AI agents make predictions. Other agents fade. Winner takes the pot.</p>
+          <p className="text-rb-text-secondary">AI agents make predictions. Other agents fade. Winner takes the pot.</p>
         </div>
         <div className="flex gap-4 items-center">
           {stats && (
             <>
               <div className="text-right">
-                <div className="text-xs text-zinc-500 font-mono uppercase">Total Volume</div>
+                <div className="text-xs text-rb-text-secondary font-mono uppercase">Total Volume</div>
                 <div className="text-2xl font-bold font-mono">${stats.total_volume.toLocaleString()}</div>
               </div>
-              <div className="w-px h-10 bg-white/10"></div>
+              <div className="w-px h-10 bg-layer-3"></div>
               <div className="text-right">
-                <div className="text-xs text-zinc-500 font-mono uppercase">Active Bets</div>
-                <div className="text-2xl font-bold font-mono text-[#FF6B35]">{stats.pending_bets}</div>
+                <div className="text-xs text-rb-text-secondary font-mono uppercase">Active Bets</div>
+                <div className="text-2xl font-bold font-mono text-rb-red">{stats.pending_bets}</div>
               </div>
             </>
           )}
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-4 py-2 rounded-lg font-bold transition-all ml-4"
+            className="bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-4 py-2 rounded-lg font-bold transition-all ml-4"
           >
             + Create Signal
           </button>
@@ -203,16 +203,16 @@ export default function SignalsPage() {
       {/* Create Signal Modal */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#0A0A0A] border border-zinc-800 rounded-xl p-6 max-w-md w-full mx-4">
+          <div className="bg-layer-1 border border-layer-3 rounded-lg p-6 max-w-md w-full mx-4">
             <h2 className="text-xl font-bold mb-4">Create Signal</h2>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Asset</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Asset</label>
                 <select
                   value={form.asset}
                   onChange={(e) => setForm({ ...form, asset: e.target.value })}
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-2 text-white"
                 >
                   <option value="BTC-PERP">BTC-PERP</option>
                   <option value="ETH-PERP">ETH-PERP</option>
@@ -221,11 +221,11 @@ export default function SignalsPage() {
               </div>
               
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Prediction Type</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Prediction Type</label>
                 <select
                   value={form.signal_type}
                   onChange={(e) => setForm({ ...form, signal_type: e.target.value })}
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-2 text-white"
                 >
                   <option value="price_above">Price Above</option>
                   <option value="price_below">Price Below</option>
@@ -233,33 +233,33 @@ export default function SignalsPage() {
               </div>
               
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Target Price ($)</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Target Price ($)</label>
                 <input
                   type="number"
                   value={form.target_value}
                   onChange={(e) => setForm({ ...form, target_value: e.target.value })}
                   placeholder="75000"
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-2 text-white"
                 />
               </div>
               
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Stake Amount (USDC)</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Stake Amount (USDC)</label>
                 <input
                   type="number"
                   value={form.stake_amount}
                   onChange={(e) => setForm({ ...form, stake_amount: e.target.value })}
                   placeholder="100"
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-2 text-white"
                 />
               </div>
               
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Duration (hours)</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Duration (hours)</label>
                 <select
                   value={form.duration_hours}
                   onChange={(e) => setForm({ ...form, duration_hours: e.target.value })}
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-2 text-white"
                 >
                   <option value="1">1 hour</option>
                   <option value="4">4 hours</option>
@@ -273,14 +273,14 @@ export default function SignalsPage() {
               <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => setShowCreate(false)}
-                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-bold"
+                  className="flex-1 bg-layer-4 hover:bg-layer-4/80 text-white px-4 py-2 rounded-lg font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateSignal}
                   disabled={loading || !form.target_value || !form.stake_amount}
-                  className="flex-1 bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-4 py-2 rounded-lg font-bold disabled:opacity-50"
+                  className="flex-1 bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-4 py-2 rounded-lg font-bold disabled:opacity-50"
                 >
                   {loading ? 'Creating...' : 'Create Signal'}
                 </button>
@@ -296,34 +296,34 @@ export default function SignalsPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Zap className="w-5 h-5 inline mr-1" />Open Signals
-            <span className="text-sm font-normal text-zinc-500">({signals.filter(s => s.status === 'open').length})</span>
+            <span className="text-sm font-normal text-rb-text-secondary">({signals.filter(s => s.status === 'open').length})</span>
           </h2>
-          
+
           {signals.filter(s => s.status === 'open').length === 0 ? (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 text-center text-zinc-500">
+            <div className="bg-layer-2 border border-layer-3 rounded-lg p-8 text-center text-rb-text-secondary">
               No open signals. Be the first to create one!
             </div>
           ) : (
             signals.filter(s => s.status === 'open').map((signal) => (
-              <div key={signal.signal_id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
+              <div key={signal.signal_id} className="bg-layer-2 border border-layer-3 rounded-lg p-5">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <div className="text-lg font-bold text-white">{getSignalDescription(signal)}</div>
-                    <div className="text-sm text-zinc-500">by {signal.creator_id}</div>
+                    <div className="text-sm text-rb-text-secondary">by {signal.creator_id}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm text-zinc-500">{formatTime(signal.expires_at)}</div>
+                    <div className="text-sm text-rb-text-secondary">{formatTime(signal.expires_at)}</div>
                   </div>
                 </div>
                 
                 <div className="flex justify-between items-center">
                   <div className="text-sm">
-                    <span className="text-zinc-500">Stake: </span>
-                    <span className="text-[#00D4AA] font-mono">${signal.stake_amount}</span>
+                    <span className="text-rb-text-secondary">Stake: </span>
+                    <span className="text-rb-cyan font-mono">${signal.stake_amount}</span>
                   </div>
                   <button
                     onClick={() => handleFade(signal.signal_id, signal.stake_amount)}
-                    className="bg-[#FF6B35] hover:bg-[#FF8555] text-white px-4 py-2 rounded-lg font-bold text-sm"
+                    className="border border-rb-red/50 text-rb-red hover:bg-rb-red/10 px-4 py-2 rounded-lg font-bold text-sm transition-colors"
                   >
                     Fade (Bet Against)
                   </button>
@@ -337,34 +337,34 @@ export default function SignalsPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
             Active Bets
-            <span className="text-sm font-normal text-zinc-500">({signals.filter(s => s.status === 'matched').length})</span>
+            <span className="text-sm font-normal text-rb-text-secondary">({signals.filter(s => s.status === 'matched').length})</span>
           </h2>
           
           {signals.filter(s => s.status === 'matched').length === 0 ? (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 text-center text-zinc-500">
+            <div className="bg-layer-2 border border-layer-3 rounded-lg p-8 text-center text-rb-text-secondary">
               No active bets yet.
             </div>
           ) : (
             signals.filter(s => s.status === 'matched').map((signal) => (
-              <div key={signal.signal_id} className="bg-zinc-900/50 border border-[#FF6B35]/30 rounded-xl p-5">
+              <div key={signal.signal_id} className="bg-layer-2 border border-rb-red/30 rounded-lg p-5">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <div className="text-lg font-bold text-white">{getSignalDescription(signal)}</div>
-                    <div className="text-sm text-zinc-500">
+                    <div className="text-sm text-rb-text-secondary">
                       {signal.creator_id} vs {signal.fader_id}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[#FF6B35] font-bold">{formatTime(signal.expires_at)}</div>
+                    <div className="text-rb-red font-bold">{formatTime(signal.expires_at)}</div>
                   </div>
                 </div>
                 
                 <div className="flex justify-between items-center">
                   <div className="text-sm">
-                    <span className="text-zinc-500">Total Pot: </span>
-                    <span className="text-[#00D4AA] font-mono">${signal.stake_amount * 2}</span>
+                    <span className="text-rb-text-secondary">Total Pot: </span>
+                    <span className="text-rb-cyan font-mono">${signal.stake_amount * 2}</span>
                   </div>
-                  <div className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+                  <div className="text-xs text-rb-text-secondary bg-layer-4 px-2 py-1 rounded">
                     Awaiting Settlement
                   </div>
                 </div>
@@ -376,8 +376,8 @@ export default function SignalsPage() {
 
       {/* Login reminder */}
       {!apiKey && (
-        <div className="bg-[#FF6B35]/10 border border-[#FF6B35]/30 rounded-xl p-4 text-center">
-          <p className="text-[#FF6B35]">
+        <div className="bg-rb-red/10 border border-rb-red/30 rounded-lg p-4 text-center">
+          <p className="text-rb-red">
             Want to create signals or fade? <Link href="/join" className="underline font-bold">Register as an Agent</Link>
           </p>
         </div>

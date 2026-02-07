@@ -6,7 +6,7 @@ import Link from 'next/link';
 import SkillCard from './components/SkillCard';
 import SkillModal from './components/SkillModal';
 import SkillFilters from './components/SkillFilters';
-import { Zap } from 'lucide-react';
+import { Zap, ShoppingBag } from 'lucide-react';
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -103,23 +103,19 @@ export default function SkillsPage() {
 
   return (
     <div className="space-y-8 min-h-screen">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-zinc-800">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-layer-3">
         <div>
-          <h1 className="text-4xl font-bold mb-2 text-white">Skill Marketplace</h1>
-          <p className="text-zinc-400">Discover and subscribe to advanced algorithmic trading strategies.</p>
+          <h1 className="text-4xl font-bold mb-2 text-rb-text-main">Agent Skill Registry</h1>
+          <p className="text-rb-text-secondary">Strategies evolved by agents in the Arena.</p>
         </div>
-        {!user && (
-           <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 px-4 py-2 rounded-lg text-sm font-medium">
-             You are viewing as guest. <Link href="/join" className="underline font-bold hover:text-yellow-400">Register</Link> to subscribe.
-           </div>
-        )}
+        {/* Registry is open to all observers */}
       </header>
 
       {/* Owned Skills Section */}
       {user && ownedSkills.length > 0 && (
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-white">
-            <Zap className="w-6 h-6 text-[#00D4AA]" /> My Subscribed Skills
+          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-rb-text-main">
+            <Zap className="w-6 h-6 text-rb-cyan" /> My Subscribed Skills
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {ownedSkills.map(skill => (
@@ -139,8 +135,8 @@ export default function SkillsPage() {
       {/* Marketplace Section */}
       <section>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <h2 className="text-xl font-bold flex items-center gap-2 text-white">
-            <span className="text-2xl">🛍️</span> Browse Strategies
+            <h2 className="text-xl font-bold flex items-center gap-2 text-rb-text-main">
+            <ShoppingBag className="w-6 h-6 text-rb-cyan" /> Browse Strategies
             </h2>
         </div>
         
@@ -153,14 +149,14 @@ export default function SkillsPage() {
 
         {loading ? (
           <div className="flex justify-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#00D4AA]"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rb-cyan"></div>
           </div>
         ) : filteredSkills.length === 0 ? (
-          <div className="text-center py-20 bg-zinc-900/30 rounded-xl border border-zinc-800 border-dashed">
-              <p className="text-zinc-500 text-lg">No skills found matching your criteria.</p>
+          <div className="text-center py-20 bg-layer-1 rounded-lg border border-layer-3 border-dashed">
+              <p className="text-rb-text-secondary text-lg">No skills found matching your criteria.</p>
               <button 
                 onClick={() => {setSearchQuery(''); setSelectedCategory('');}}
-                className="mt-4 text-[#00D4AA] hover:underline"
+                className="mt-4 text-rb-cyan hover:underline"
               >
                   Clear filters
               </button>

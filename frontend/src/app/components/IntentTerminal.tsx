@@ -225,7 +225,8 @@ ${arrow} ${intent.market}
         output += '─'.repeat(40) + '\n';
         for (const p of positions) {
           const pnlSign = (p.unrealized_pnl || 0) >= 0 ? '+' : '';
-          const side = p.side === 'LONG' ? '[+]' : '[-]';
+          const sideRaw = String(p.side || '').toLowerCase();
+          const side = sideRaw === 'long' ? '[+]' : sideRaw === 'short' ? '[-]' : '[?]';
           const market = p.market || p.asset || '?';
           output += `${side} ${market} | $${p.size_usdc} | ${p.leverage}x | PnL: ${pnlSign}$${(p.unrealized_pnl || 0).toFixed(2)}\n`;
         }
@@ -248,20 +249,41 @@ ${arrow} ${intent.market}
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/positions/${agentId}/${intent.market}/close`, {
+      // 先获取当前持仓，按市场找到可平仓的 position_id
+      const positionsResponse = await fetch(`${API_BASE_URL}/positions/${agentId}`, {
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!positionsResponse.ok) {
+        return '[X] 平仓失败: 无法读取当前持仓';
+      }
+
+      const positionsData = await positionsResponse.json();
+      const positions = Array.isArray(positionsData) ? positionsData : (positionsData.positions || []);
+      const targetMarket = intent.market.toUpperCase();
+      const target = positions.find((p: any) => {
+        if (!p?.is_open) return false;
+        const market = String(p.asset || p.market || '').toUpperCase();
+        return market === targetMarket || market === targetMarket.replace('-PERP', '');
+      });
+
+      if (!target?.position_id) {
+        return `[i] 未找到 ${intent.market} 的开仓仓位`;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/positions/${target.position_id}/close`, {
         method: 'POST',
         headers: { 'X-API-Key': apiKey },
       });
 
       if (response.ok) {
         const data = await response.json();
-        const pnl = data.realized_pnl ?? data.pnl ?? 0;
+        const pnl = Number(data?.position?.realized_pnl ?? data?.realized_pnl ?? data?.pnl ?? 0);
         const pnlSign = pnl >= 0 ? '+' : '';
-        return `[OK] 已平掉 ${intent.market} 仓位 | PnL: ${pnlSign}$${pnl.toFixed(2)}`;
-      } else {
-        const error = await response.text();
-        return `[X] 平仓失败: ${error}`;
+        return `[OK] 已平掉 ${target.asset || target.market || intent.market} 仓位 | PnL: ${pnlSign}$${pnl.toFixed(2)}`;
       }
+
+      const error = await response.text();
+      return `[X] 平仓失败: ${error}`;
     } catch {
       return '[X] 平仓失败 - 请检查网络连接';
     }
