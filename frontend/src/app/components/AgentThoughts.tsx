@@ -1,6 +1,7 @@
 'use client';
 
 import { TradeRequest } from '@/lib/api';
+import { Bot, MessageCircle, Brain } from 'lucide-react';
 
 interface AgentThoughtsProps {
   requests: TradeRequest[];
@@ -14,7 +15,7 @@ export default function AgentThoughts({ requests, maxItems = 10 }: AgentThoughts
     return (
       <div className="glass-card p-6">
         <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
-          💭 Agent Thoughts
+          <Brain className="w-5 h-5 text-purple-400" /> Agent Thoughts
         </h2>
         <div className="text-center text-zinc-500 py-4">
           No agent reasoning available yet...
@@ -27,7 +28,7 @@ export default function AgentThoughts({ requests, maxItems = 10 }: AgentThoughts
     <div className="glass-card">
       <div className="p-4 border-b border-white/5">
         <h2 className="text-xl font-semibold flex items-center gap-2">
-          💭 Agent Thoughts
+          <Brain className="w-5 h-5 text-purple-400" /> Agent Thoughts
           <span className="text-sm font-normal text-zinc-500">
             ({requestsWithReasons.length})
           </span>
@@ -44,7 +45,7 @@ export default function AgentThoughts({ requests, maxItems = 10 }: AgentThoughts
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm">
-                  🤖
+                  <Bot className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-mono text-sm text-zinc-400">[{r.agentId}]</span>
               </div>
@@ -59,7 +60,9 @@ export default function AgentThoughts({ requests, maxItems = 10 }: AgentThoughts
 
             {/* Thought Bubble */}
             <div className="relative mt-2 ml-10">
-              <div className="absolute -left-6 top-0 text-lg opacity-50">💭</div>
+              <div className="absolute -left-6 top-0 opacity-50">
+                <MessageCircle className="w-4 h-4 text-zinc-500" />
+              </div>
               <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700/50">
                 <p className="text-sm text-zinc-300 italic">
                   "{r.reason}"

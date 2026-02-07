@@ -220,3 +220,42 @@ pub struct TradeHistory {
     pub pnl: f64,
     pub timestamp: i64,
 }
+
+// ==================== Skills ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillStats {
+    pub win_rate: f64,
+    pub total_return: f64,
+    pub sharpe_ratio: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Skill {
+    pub skill_id: String,
+    pub name: String,
+    pub description: String,
+    pub price: f64,
+    pub owner_id: String,
+    pub creator_name: String,
+    #[serde(rename = "type")]
+    pub skill_type: String,
+    pub category: String,
+    pub subscribers_count: u64,
+    pub stats: SkillStats,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SkillsResponse {
+    pub skills: Vec<Skill>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SkillPurchase {
+    pub purchase_id: String,
+    pub skill_id: String,
+    pub buyer_id: String,
+    pub timestamp: i64,
+    pub cost: f64,
+}

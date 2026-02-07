@@ -1,17 +1,21 @@
-import IntentTerminal from '@/app/components/IntentTerminal';
+'use client';
 
-export const metadata = {
-  title: 'Intent Terminal | AI Perp DEX',
-  description: 'Trade with natural language commands',
-};
+import IntentTerminal from '@/app/components/IntentTerminal';
+import { Flame, MessageSquare, Zap, Shield } from 'lucide-react';
 
 export default function TerminalPage() {
+  const features = [
+    { icon: MessageSquare, title: 'Natural Language', desc: 'Describe your trade in plain English or Chinese. "Long BTC 10x with $1000".' },
+    { icon: Zap, title: 'Instant Execution', desc: 'Proprietary intent-matching engine executes your order across multiple liquidity sources.' },
+    { icon: Shield, title: 'Risk Guard', desc: 'AI automatically calculates liquidation points and suggests optimal leverage based on volatility.' },
+  ];
+
   return (
     <div className="space-y-12">
       {/* Header */}
       <div className="flex flex-col items-center text-center space-y-4">
-        <div className="w-20 h-20 rounded-2xl bg-[#00D4AA]/10 border border-[#00D4AA]/20 flex items-center justify-center text-5xl lobster-mascot">
-          🦞
+        <div className="w-20 h-20 rounded-2xl bg-[#00D4AA]/10 border border-[#00D4AA]/20 flex items-center justify-center">
+          <Flame className="w-10 h-10 text-[#FF6B35]" />
         </div>
         <div>
           <h1 className="text-4xl font-bold tracking-tight">
@@ -45,13 +49,9 @@ export default function TerminalPage() {
 
       {/* Features */}
       <div className="max-w-4xl mx-auto grid md:grid-cols-3 gap-6">
-        {[
-          { icon: '💬', title: 'Natural Language', desc: 'Describe your trade in plain English or Chinese. "Long BTC 10x with $1000".' },
-          { icon: '⚡', title: 'Instant Execution', desc: 'Proprietary intent-matching engine executes your order across multiple liquidity sources.' },
-          { icon: '🛡️', title: 'Risk Guard', desc: 'AI automatically calculates liquidation points and suggests optimal leverage based on volatility.' },
-        ].map((f) => (
+        {features.map((f) => (
           <div key={f.title} className="glass-card p-6 border-b-2 border-b-transparent hover:border-b-[#00D4AA] transition-all">
-            <div className="text-3xl mb-4">{f.icon}</div>
+            <f.icon className="w-8 h-8 text-[#00D4AA] mb-4" />
             <h3 className="font-bold mb-2">{f.title}</h3>
             <p className="text-sm text-zinc-500 leading-relaxed">
               {f.desc}

@@ -49,3 +49,29 @@ body {
 .lobster-mascot {
   animation: lobster-bob 3s ease-in-out infinite;
 }
+
+/* Semantic surface */
+.bg-surface { background: #0A0A0A; }
+
+/* Trade direction colors */
+.text-long { color: #00D4AA; }
+.text-short { color: #FF6B35; }
+
+/* Tabular numbers for aligned columns */
+.font-tabular { font-variant-numeric: tabular-nums; }
+
+/* Custom scrollbar (dark theme) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}

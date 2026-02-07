@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Market, TradeRequest } from '@/lib/api';
 import { WS_URL as CONFIG_WS_URL } from '@/lib/config';
+import { ApiThought, ApiChatMessage } from '@/lib/types';
 
 const WS_URL = CONFIG_WS_URL;
 
@@ -25,6 +26,9 @@ export interface WSData {
   markets: Market[];
   requests: TradeRequest[];
   trades: Trade[];
+  thoughts: ApiThought[];
+  messages: ApiChatMessage[];
+  onlineCount: number;
 }
 
 export interface UseWebSocketReturn {
@@ -32,6 +36,7 @@ export interface UseWebSocketReturn {
   isConnected: boolean;
   error: string | null;
   reconnect: () => void;
+  sendMessage: (type: string, data: any) => void;
 }
 
 export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn {
@@ -39,6 +44,9 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
     markets: initialData?.markets || [],
     requests: initialData?.requests || [],
     trades: initialData?.trades || [],
+    thoughts: initialData?.thoughts || [],
+    messages: initialData?.messages || [],
+    onlineCount: initialData?.onlineCount || 0,
   });
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,12 +137,43 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
               }
               break;
 
+            case 'thought':
+            case 'new_thought':
+              if (msg.data) {
+                setData(prev => ({
+                  ...prev,
+                  thoughts: [msg.data as ApiThought, ...prev.thoughts].slice(0, 50),
+                }));
+              }
+              break;
+
+            case 'chat':
+            case 'chat_message':
+            case 'new_message':
+              if (msg.data) {
+                setData(prev => ({
+                  ...prev,
+                  messages: [...prev.messages, msg.data as ApiChatMessage].slice(-100),
+                }));
+              }
+              break;
+
+            case 'online_agents':
+            case 'stats_update':
+              if (msg.data?.count !== undefined) {
+                setData(prev => ({ ...prev, onlineCount: msg.data.count }));
+              }
+              break;
+
             case 'snapshot':
               // Full state snapshot
               setData({
                 markets: Array.isArray(msg.markets) ? msg.markets.map(parseMarket) : data.markets,
                 requests: Array.isArray(msg.requests) ? msg.requests.map(parseRequest) : data.requests,
                 trades: Array.isArray(msg.trades) ? msg.trades.map(parseTrade) : data.trades,
+                thoughts: Array.isArray(msg.thoughts) ? msg.thoughts : data.thoughts,
+                messages: Array.isArray(msg.messages) ? msg.messages : data.messages,
+                onlineCount: msg.online_count || data.onlineCount,
               });
               break;
 
@@ -180,6 +219,14 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
     connect();
   }, [connect]);
 
+  const sendMessage = useCallback((type: string, data: any) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, data }));
+    } else {
+      console.warn('[WS] Cannot send message: WebSocket is not open');
+    }
+  }, []);
+
   useEffect(() => {
     connect();
 
@@ -193,7 +240,7 @@ export function useWebSocket(initialData?: Partial<WSData>): UseWebSocketReturn 
     };
   }, [connect]);
 
-  return { data, isConnected, error, reconnect };
+  return { data, isConnected, error, reconnect, sendMessage };
 }
 
 // Parsers for backend data

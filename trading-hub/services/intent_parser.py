@@ -46,10 +46,10 @@ class IntentParser:
             market = f"{symbol_map[symbol]}-PERP"
 
         # 2. Size detection
-        # Matches: $100, 100刀, 100美元, 100 usdc, 100 u
+        # Matches: $100, 100刀, 100美元, 100 usdc, 100 u, 100 dollars, 50 bucks
         # Group 1: $100 -> 100
         # Group 2: 100 -> 100 (followed by unit)
-        size_match = re.search(r'\$(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:刀|美元|usdc|u)', text)
+        size_match = re.search(r'\$(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:刀|美元|usdc|usd|u|dollars?|bucks?)\b', text)
         if size_match:
             size_str = size_match.group(1) or size_match.group(2)
             try:
@@ -67,8 +67,8 @@ class IntentParser:
                 pass
 
         # 4. Price detection (for alerts)
-        # Matches: 跌破 90, 涨到 100
-        price_match = re.search(r'(?:跌破|涨到|到达|突破)\s*(\d+(?:\.\d+)?)', text)
+        # Matches: 跌破 90, 涨到 100, drops to 60000, reaches 100000
+        price_match = re.search(r'(?:跌破|涨到|到达|突破|drops?\s*to|reaches?|hits?|below|above)\s*\$?(\d+(?:\.\d+)?)', text)
         if price_match:
             try:
                 price = float(price_match.group(1))

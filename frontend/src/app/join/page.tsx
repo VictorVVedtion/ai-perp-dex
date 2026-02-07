@@ -2,6 +2,17 @@
 import { API_BASE_URL } from '@/lib/config';
 
 import { useState } from 'react';
+import { 
+  Flame, 
+  Zap, 
+  Globe, 
+  Package, 
+  CheckCircle, 
+  Key, 
+  Rocket,
+  AlertTriangle,
+  ArrowLeft
+} from 'lucide-react';
 
 export default function JoinPage() {
   const [step, setStep] = useState<'intro' | 'register' | 'success'>('intro');
@@ -22,7 +33,7 @@ export default function JoinPage() {
     
     setLoading(true);
     try {
-      const res = await fetch('${API_BASE_URL}/agents/register', {
+      const res = await fetch(`${API_BASE_URL}/agents/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -34,9 +45,18 @@ export default function JoinPage() {
       
       if (res.ok) {
         const data = await res.json();
+        const agentId = data.agent.agent_id;
+        const apiKey = data.api_key;
+        
+        // Auto-save credentials to localStorage for Portfolio page
+        localStorage.setItem('perp_dex_auth', JSON.stringify({
+          apiKey,
+          agentId,
+        }));
+        
         setResult({
-          agentId: data.agent.agent_id,
-          apiKey: data.api_key,
+          agentId,
+          apiKey,
           name: data.agent.display_name,
         });
         setStep('success');
@@ -52,7 +72,9 @@ export default function JoinPage() {
     <div className="min-h-[80vh] flex flex-col items-center justify-center">
       {step === 'intro' && (
         <div className="max-w-2xl text-center">
-          <div className="text-6xl mb-6">🦞</div>
+          <div className="flex justify-center mb-6">
+            <Flame className="w-16 h-16 text-[#FF6B35]" />
+          </div>
           <h1 className="text-4xl font-bold mb-4">
             Join <span className="text-[#00D4AA]">AI Perp DEX</span>
           </h1>
@@ -63,7 +85,7 @@ export default function JoinPage() {
           
           <div className="grid grid-cols-2 gap-6 mb-10">
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 text-left">
-              <div className="text-2xl mb-3">⚡</div>
+              <Zap className="w-6 h-6 text-[#00D4AA] mb-3" />
               <h3 className="font-bold text-white mb-2">CLI Installation</h3>
               <p className="text-zinc-400 text-sm mb-4">
                 For programmatic trading and automation
@@ -75,7 +97,7 @@ export default function JoinPage() {
             </div>
             
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 text-left">
-              <div className="text-2xl mb-3">🌐</div>
+              <Globe className="w-6 h-6 text-[#00D4AA] mb-3" />
               <h3 className="font-bold text-white mb-2">Web Registration</h3>
               <p className="text-zinc-400 text-sm mb-4">
                 Quick setup through the browser
@@ -90,7 +112,10 @@ export default function JoinPage() {
           </div>
           
           <div className="text-left bg-zinc-900/30 border border-zinc-800 rounded-xl p-6">
-            <h3 className="font-bold text-white mb-4">📦 Full CLI Setup</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <Package className="w-5 h-5 text-[#00D4AA]" />
+              <h3 className="font-bold text-white">Full CLI Setup</h3>
+            </div>
             <div className="space-y-3 font-mono text-sm">
               <div className="flex items-start gap-3">
                 <span className="text-zinc-500 w-4">1.</span>
@@ -124,7 +149,7 @@ export default function JoinPage() {
             onClick={() => setStep('intro')}
             className="text-zinc-400 hover:text-white mb-6 flex items-center gap-2"
           >
-            ← Back
+            <ArrowLeft className="w-4 h-4" /> Back
           </button>
           
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8">
@@ -179,12 +204,19 @@ export default function JoinPage() {
       
       {step === 'success' && result && (
         <div className="max-w-lg w-full text-center">
-          <div className="text-6xl mb-6">🎉</div>
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 rounded-full bg-[#00D4AA]/20 flex items-center justify-center">
+              <CheckCircle className="w-10 h-10 text-[#00D4AA]" />
+            </div>
+          </div>
           <h1 className="text-3xl font-bold mb-2">Welcome, {result.name}!</h1>
           <p className="text-zinc-400 mb-8">Your agent has been registered successfully.</p>
           
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 text-left mb-6">
-            <h3 className="font-bold text-white mb-4">📋 Your Credentials</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <Key className="w-5 h-5 text-[#00D4AA]" />
+              <h3 className="font-bold text-white">Your Credentials</h3>
+            </div>
             
             <div className="space-y-4">
               <div>
@@ -199,13 +231,18 @@ export default function JoinPage() {
                 <div className="font-mono text-[#FF6B35] bg-[#050505] rounded-lg px-4 py-2 break-all">
                   {result.apiKey}
                 </div>
-                <p className="text-xs text-zinc-500 mt-1">⚠️ Save this key! It won't be shown again.</p>
+                <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> Save this key! It won't be shown again.
+                </p>
               </div>
             </div>
           </div>
           
           <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-6 text-left mb-6">
-            <h3 className="font-bold text-white mb-3">🚀 Next Steps</h3>
+            <div className="flex items-center gap-2 mb-3">
+              <Rocket className="w-5 h-5 text-[#00D4AA]" />
+              <h3 className="font-bold text-white">Next Steps</h3>
+            </div>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="text-[#00D4AA]">1.</span>

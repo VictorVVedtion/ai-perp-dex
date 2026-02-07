@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Briefcase, TrendingUp, Lock } from 'lucide-react';
 
 interface Position {
   position_id: string;
@@ -26,6 +27,7 @@ interface Balance {
 }
 
 import { API_BASE_URL } from '@/lib/config';
+import { formatPrice } from '@/lib/utils';
 const API = API_BASE_URL;
 
 export default function PortfolioPage() {
@@ -51,18 +53,20 @@ export default function PortfolioPage() {
   }, []);
 
   useEffect(() => {
-    if (agentId) {
+    if (agentId && apiKey) {
       fetchPortfolio();
     }
-  }, [agentId]);
+  }, [agentId, apiKey]);
 
   const fetchPortfolio = async () => {
-    if (!agentId) return;
+    if (!agentId || !apiKey) return;
+    
+    const headers = { 'X-API-Key': apiKey };
     
     try {
       const [posRes, balRes] = await Promise.all([
-        fetch(`${API}/positions/${agentId}`),
-        fetch(`${API}/balance/${agentId}`),
+        fetch(`${API}/positions/${agentId}`, { headers }),
+        fetch(`${API}/balance/${agentId}`, { headers }),
       ]);
       
       if (posRes.ok) {
@@ -193,7 +197,7 @@ export default function PortfolioPage() {
   if (!agentId) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center">
-        <div className="text-6xl mb-6">🔐</div>
+        <div className="flex justify-center mb-6"><Lock className="w-16 h-16 text-zinc-600" /></div>
         <h1 className="text-3xl font-bold mb-4">Portfolio</h1>
         <p className="text-zinc-500 mb-8">Login with your API Key to view your portfolio</p>
         
@@ -273,7 +277,7 @@ export default function PortfolioPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-3xl">💼</span>
+            <Briefcase className="w-8 h-8 text-[#00D4AA]" />
             <h1 className="text-4xl font-bold">Portfolio</h1>
           </div>
           <p className="text-zinc-500">
@@ -310,20 +314,20 @@ export default function PortfolioPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
           <div className="text-xs text-zinc-500 uppercase mb-1">Total Value</div>
-          <div className="text-2xl font-bold font-mono">${totalValue.toFixed(2)}</div>
+          <div className="text-2xl font-bold font-mono font-tabular">{formatPrice(totalValue)}</div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
           <div className="text-xs text-zinc-500 uppercase mb-1">Available</div>
-          <div className="text-2xl font-bold font-mono text-[#00D4AA]">${balance?.available.toFixed(2) || '0.00'}</div>
+          <div className="text-2xl font-bold font-mono font-tabular text-[#00D4AA]">{formatPrice(balance?.available || 0)}</div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
           <div className="text-xs text-zinc-500 uppercase mb-1">In Positions</div>
-          <div className="text-2xl font-bold font-mono text-[#FF6B35]">${balance?.locked.toFixed(2) || '0.00'}</div>
+          <div className="text-2xl font-bold font-mono font-tabular text-[#FF6B35]">{formatPrice(balance?.locked || 0)}</div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
           <div className="text-xs text-zinc-500 uppercase mb-1">Unrealized PnL</div>
-          <div className={`text-2xl font-bold font-mono ${totalPnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
-            {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}
+          <div className={`text-2xl font-bold font-mono font-tabular ${totalPnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+            {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)}
           </div>
         </div>
       </div>
@@ -331,7 +335,7 @@ export default function PortfolioPage() {
       {/* Positions */}
       <div>
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-          📈 Open Positions
+          <TrendingUp className="w-5 h-5 inline mr-2" />Open Positions
           <span className="text-sm font-normal text-zinc-500">({positions.filter(p => p.is_open).length})</span>
         </h2>
         
@@ -354,15 +358,15 @@ export default function PortfolioPage() {
                       </span>
                     </div>
                     <div className="text-sm text-zinc-500 mt-1">
-                      Size: ${pos.size_usdc} @ ${pos.entry_price.toFixed(2)}
+                      Size: ${pos.size_usdc} @ {formatPrice(pos.entry_price)}
                     </div>
                   </div>
                   
                   <div className="text-right">
-                    <div className={`text-xl font-bold ${pos.unrealized_pnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
-                      {pos.unrealized_pnl >= 0 ? '+' : ''}${pos.unrealized_pnl.toFixed(2)}
+                    <div className={`text-xl font-bold font-mono ${pos.unrealized_pnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+                      {pos.unrealized_pnl >= 0 ? '+' : ''}{formatPrice(Math.abs(pos.unrealized_pnl))}
                     </div>
-                    <div className={`text-sm ${pos.unrealized_pnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+                    <div className={`text-sm font-mono ${pos.unrealized_pnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
                       {pos.unrealized_pnl_pct >= 0 ? '+' : ''}{pos.unrealized_pnl_pct.toFixed(2)}%
                     </div>
                   </div>
@@ -370,8 +374,8 @@ export default function PortfolioPage() {
                 
                 <div className="flex justify-between items-center text-sm">
                   <div className="flex gap-4 text-zinc-500">
-                    <span>Current: <span className="text-white">${pos.current_price.toFixed(2)}</span></span>
-                    <span>Liq: <span className="text-[#FF6B35]">${pos.liquidation_price.toFixed(2)}</span></span>
+                    <span>Current: <span className="text-white font-mono">{formatPrice(pos.current_price)}</span></span>
+                    <span>Liq: <span className="text-[#FF6B35] font-mono">{formatPrice(pos.liquidation_price)}</span></span>
                   </div>
                   
                   <button

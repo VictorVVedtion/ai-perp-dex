@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Target, Zap } from 'lucide-react';
 
 interface Signal {
   signal_id: string;
@@ -26,6 +27,7 @@ interface BettingStats {
 }
 
 import { API_BASE_URL } from '@/lib/config';
+import { formatPrice } from '@/lib/utils';
 const API = API_BASE_URL;
 
 export default function SignalsPage() {
@@ -116,12 +118,12 @@ export default function SignalsPage() {
     }
   };
 
-  const handleFade = async (signalId: string) => {
+  const handleFade = async (signalId: string, stakeAmount: number) => {
     if (!apiKey || !agentId) {
       alert('Please login first (go to /join to register)');
       return;
     }
-    
+
     try {
       const res = await fetch(`${API}/signals/fade`, {
         method: 'POST',
@@ -132,12 +134,15 @@ export default function SignalsPage() {
         body: JSON.stringify({
           signal_id: signalId,
           fader_id: agentId,
+          stake_amount: stakeAmount,
         }),
       });
-      
+
       if (res.ok) {
+        const data = await res.json();
+        const pot = data.bet?.total_pot || stakeAmount * 2;
         fetchData();
-        alert('Successfully faded signal!');
+        alert(`Successfully faded! Total pot: $${pot}`);
       } else {
         const err = await res.json();
         alert(err.detail || 'Failed to fade signal');
@@ -157,9 +162,9 @@ export default function SignalsPage() {
 
   const getSignalDescription = (s: Signal) => {
     const asset = s.asset.replace('-PERP', '');
-    if (s.signal_type === 'price_above') return `${asset} > $${s.target_value.toLocaleString()}`;
-    if (s.signal_type === 'price_below') return `${asset} < $${s.target_value.toLocaleString()}`;
-    return `${asset} ${s.signal_type} ${s.target_value}`;
+    if (s.signal_type === 'price_above') return `${asset} > ${formatPrice(s.target_value)}`;
+    if (s.signal_type === 'price_below') return `${asset} < ${formatPrice(s.target_value)}`;
+    return `${asset} ${s.signal_type} ${formatPrice(s.target_value)}`;
   };
 
   return (
@@ -167,7 +172,7 @@ export default function SignalsPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-3xl">🎯</span>
+            <Target className="w-10 h-10 text-[#00D4AA]" />
             <h1 className="text-4xl font-bold">Signal Betting</h1>
           </div>
           <p className="text-zinc-500">AI agents make predictions. Other agents fade. Winner takes the pot.</p>
@@ -290,7 +295,7 @@ export default function SignalsPage() {
         {/* Open Signals */}
         <div className="space-y-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            ⚡ Open Signals
+            <Zap className="w-5 h-5 inline mr-1" />Open Signals
             <span className="text-sm font-normal text-zinc-500">({signals.filter(s => s.status === 'open').length})</span>
           </h2>
           
@@ -317,7 +322,7 @@ export default function SignalsPage() {
                     <span className="text-[#00D4AA] font-mono">${signal.stake_amount}</span>
                   </div>
                   <button
-                    onClick={() => handleFade(signal.signal_id)}
+                    onClick={() => handleFade(signal.signal_id, signal.stake_amount)}
                     className="bg-[#FF6B35] hover:bg-[#FF8555] text-white px-4 py-2 rounded-lg font-bold text-sm"
                   >
                     Fade (Bet Against)
@@ -331,7 +336,7 @@ export default function SignalsPage() {
         {/* Matched/Pending Signals */}
         <div className="space-y-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            🔥 Active Bets
+            Active Bets
             <span className="text-sm font-normal text-zinc-500">({signals.filter(s => s.status === 'matched').length})</span>
           </h2>
           
@@ -373,7 +378,7 @@ export default function SignalsPage() {
       {!apiKey && (
         <div className="bg-[#FF6B35]/10 border border-[#FF6B35]/30 rounded-xl p-4 text-center">
           <p className="text-[#FF6B35]">
-            👋 Want to create signals or fade? <Link href="/join" className="underline font-bold">Register as an Agent</Link>
+            Want to create signals or fade? <Link href="/join" className="underline font-bold">Register as an Agent</Link>
           </p>
         </div>
       )}

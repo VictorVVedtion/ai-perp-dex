@@ -48,4 +48,9 @@ export const ENDPOINTS = {
   withdraw: `${API_BASE_URL}/withdraw`,
   leaderboard: `${API_BASE_URL}/leaderboard`,
   stats: `${API_BASE_URL}/stats`,
+  chat: {
+    thoughts: `${API_BASE_URL}/chat/thoughts`,
+    messages: `${API_BASE_URL}/chat/messages`,
+    send: `${API_BASE_URL}/chat/send`,
+  },
 } as const;

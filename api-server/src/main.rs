@@ -73,6 +73,12 @@ async fn main() {
         .route("/v1/account/withdraw", post(handlers::withdraw))
         .route("/v1/account/history", get(handlers::get_history))
         
+        // Skills Marketplace
+        .route("/v1/skills", get(handlers::get_skills))
+        .route("/v1/skills/:id", get(handlers::get_skill))
+        .route("/v1/skills/:id/subscribe", post(handlers::subscribe_skill))
+        .route("/v1/skills/owned", get(handlers::get_owned_skills))
+        
         .layer(CorsLayer::permissive())
         .with_state(state);
 

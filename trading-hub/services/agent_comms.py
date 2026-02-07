@@ -397,3 +397,124 @@ class AgentCommunicator:
 
 # 单例
 agent_comm = AgentCommunicator()
+
+
+# ==========================================
+# Database-backed Chat for UI persistence
+# ==========================================
+
+from db.database import get_connection
+
+class AgentChatDB:
+    """
+    Database-backed chat storage for UI.
+    Complements the in-memory AgentCommunicator with persistence.
+    """
+    
+    def __init__(self):
+        self._ensure_table()
+    
+    def _ensure_table(self):
+        """Ensure chat table exists"""
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_chat_messages (
+                id TEXT PRIMARY KEY,
+                sender_id TEXT NOT NULL,
+                sender_name TEXT,
+                channel TEXT DEFAULT 'public',
+                message_type TEXT DEFAULT 'thought',
+                content TEXT NOT NULL,
+                metadata TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+    
+    def save_message(
+        self,
+        sender_id: str,
+        content: str,
+        message_type: str = "thought",
+        channel: str = "public",
+        metadata: dict = None,
+    ) -> str:
+        """Save a chat message to database"""
+        import json
+        msg_id = f"chat_{uuid.uuid4().hex[:12]}"
+        
+        # Get sender name from agents table
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT display_name FROM agents WHERE agent_id = ?", (sender_id,))
+        row = cursor.fetchone()
+        sender_name = row['display_name'] if row else sender_id
+        
+        cursor.execute("""
+            INSERT INTO agent_chat_messages (id, sender_id, sender_name, channel, message_type, content, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (msg_id, sender_id, sender_name, channel, message_type, content, json.dumps(metadata or {})))
+        conn.commit()
+        conn.close()
+        
+        return msg_id
+    
+    def get_messages(self, channel: str = "public", limit: int = 50) -> list:
+        """Get recent messages from a channel"""
+        import json
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM agent_chat_messages
+            WHERE channel = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (channel, limit))
+        
+        messages = []
+        for row in cursor.fetchall():
+            messages.append({
+                'id': row['id'],
+                'sender_id': row['sender_id'],
+                'sender_name': row['sender_name'],
+                'channel': row['channel'],
+                'message_type': row['message_type'],
+                'content': row['content'],
+                'metadata': json.loads(row['metadata']) if row['metadata'] else {},
+                'created_at': row['created_at'],
+            })
+        conn.close()
+        
+        return list(reversed(messages))  # Oldest first
+    
+    def get_thoughts_stream(self, limit: int = 20) -> list:
+        """Get recent thoughts for the live feed"""
+        import json
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM agent_chat_messages
+            WHERE message_type = 'thought' AND channel = 'public'
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+        
+        thoughts = []
+        for row in cursor.fetchall():
+            thoughts.append({
+                'id': row['id'],
+                'agent_id': row['sender_id'],
+                'agent_name': row['sender_name'] or row['sender_id'],
+                'thought': row['content'],
+                'metadata': json.loads(row['metadata']) if row['metadata'] else {},
+                'timestamp': row['created_at'],
+            })
+        conn.close()
+        
+        return list(reversed(thoughts))  # Oldest first
+
+
+# Database chat singleton
+chat_db = AgentChatDB()

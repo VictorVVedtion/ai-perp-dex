@@ -3,6 +3,8 @@
 import { useParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Bot, Shield, TrendingUp, Users, Zap, Award, BarChart3, Globe } from 'lucide-react';
+import { getAgentReputation, AgentReputation } from '@/lib/api';
 
 // Types
 interface Agent {
@@ -55,7 +57,7 @@ const styleBadgeColors: Record<string, string> = {
 const mockAgent: Agent = {
   id: '1',
   name: 'AlphaBot',
-  avatar: '🤖',
+  avatar: 'bot',
   style: 'Momentum',
   description: 'High-frequency momentum trader specializing in BTC/ETH perpetuals. Runs on custom ML signals with 15-min timeframe.',
   followers: 1247,
@@ -120,6 +122,7 @@ function PnLChart({ data }: { data: { date: string; pnl: number }[] }) {
 export default function AgentProfilePage() {
   const params = useParams();
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [reputation, setReputation] = useState<AgentReputation | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [risk, setRisk] = useState<Risk | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -128,8 +131,27 @@ export default function AgentProfilePage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        setAgent({ ...mockAgent, id: params.id as string, name: (params.id as string).replace(/%20/g, ' ') });
+        const id = params.id as string;
+        
+        // Fetch real reputation data
+        const repData = await getAgentReputation(id);
+        setReputation(repData);
+
+        // Fallback for other data (simulated for now as it might not be in real API yet)
+        setAgent({ 
+          ...mockAgent, 
+          id: id, 
+          name: id.replace(/%20/g, ' '),
+          stats: repData ? {
+            totalPnL: repData.history.total_volume * 0.05, // simulated
+            winRate: repData.trading.win_rate * 100,
+            avgReturn: 2.4,
+            sharpeRatio: repData.trading.sharpe_ratio,
+            maxDrawdown: repData.trading.max_drawdown * 100,
+            totalTrades: repData.history.total_trades,
+          } : mockAgent.stats
+        });
+        
         setPositions(mockPositions);
         setRisk(mockRisk);
         setIsFollowing(mockAgent.isFollowing);
@@ -145,6 +167,14 @@ export default function AgentProfilePage() {
   if (loading) return <div className="flex items-center justify-center min-h-[60vh] animate-pulse text-zinc-500 font-mono">LOADING_AGENT_METRICS...</div>;
   if (!agent) return <div className="text-center py-20">Agent not found</div>;
 
+  const tierColors = {
+    Bronze: 'text-orange-400 border-orange-400/20 bg-orange-400/10',
+    Silver: 'text-gray-300 border-gray-300/20 bg-gray-300/10',
+    Gold: 'text-yellow-400 border-yellow-400/20 bg-yellow-400/10',
+    Diamond: 'text-blue-400 border-blue-400/20 bg-blue-400/10',
+    Elite: 'text-purple-400 border-purple-400/20 bg-purple-400/10',
+  };
+
   return (
     <div className="space-y-10">
       <Link href="/agents" className="inline-flex items-center gap-2 text-zinc-500 hover:text-[#00D4AA] text-xs font-mono transition-colors">
@@ -154,13 +184,18 @@ export default function AgentProfilePage() {
       {/* Header */}
       <div className="glass-card p-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-          <span className="text-[120px] leading-none">{agent.avatar}</span>
+          <Bot className="w-32 h-32" />
         </div>
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
           <div className="flex items-center gap-6">
-            <div className="w-24 h-24 rounded-2xl bg-white/5 flex items-center justify-center text-5xl border border-white/10">
-              {agent.avatar}
+            <div className="w-24 h-24 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10 relative">
+              <Bot className="w-12 h-12 text-zinc-400" />
+              {reputation && (
+                <div className={`absolute -bottom-2 -right-2 px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${tierColors[reputation.tier]}`}>
+                  {reputation.tier}
+                </div>
+              )}
             </div>
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -171,14 +206,23 @@ export default function AgentProfilePage() {
                 <span className="w-2 h-2 rounded-full bg-[#00D4AA] animate-pulse" />
               </div>
               <p className="text-zinc-500 text-sm max-w-xl leading-relaxed">{agent.description}</p>
-              <div className="flex items-center gap-6 mt-4">
-                <div className="text-xs font-mono text-zinc-400">
-                  FOLLOWERS: <span className="text-white font-bold">{agent.followers.toLocaleString()}</span>
+              
+              {reputation && (
+                <div className="flex items-center gap-6 mt-4">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-[#00D4AA]" />
+                    <span className="text-xs font-mono text-zinc-400">
+                      TRUST SCORE: <span className="text-white font-bold">{reputation.trust_score.toFixed(1)}/100</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-yellow-400" />
+                    <span className="text-xs font-mono text-zinc-400">
+                      AGE: <span className="text-white font-bold">{reputation.history.age_days} DAYS</span>
+                    </span>
+                  </div>
                 </div>
-                <div className="text-xs font-mono text-zinc-400">
-                  UPTIME: <span className="text-[#00D4AA] font-bold">99.9%</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -197,6 +241,133 @@ export default function AgentProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Reputation & Scores Grid */}
+      {reputation && (
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Trading Score */}
+          <div className="glass-card p-6 border-l-4 border-l-blue-500">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-blue-400" />
+                <h3 className="font-bold uppercase tracking-wider text-sm">Trading Reputation</h3>
+              </div>
+              <div className="text-2xl font-bold font-mono text-blue-400">{reputation.trading.score.toFixed(1)}</div>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-500">WIN RATE</span>
+                  <span className="text-zinc-300">{(reputation.trading.win_rate * 100).toFixed(1)}%</span>
+                </div>
+                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500" style={{ width: `${reputation.trading.win_rate * 100}%` }} />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <div className="text-[10px] text-zinc-500 font-mono mb-1">PROFIT FACTOR</div>
+                  <div className="text-sm font-bold font-mono">{reputation.trading.profit_factor.toFixed(2)}</div>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <div className="text-[10px] text-zinc-500 font-mono mb-1">SHARPE RATIO</div>
+                  <div className="text-sm font-bold font-mono">{reputation.trading.sharpe_ratio.toFixed(2)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Social Score */}
+          <div className="glass-card p-6 border-l-4 border-l-purple-500">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-purple-400" />
+                <h3 className="font-bold uppercase tracking-wider text-sm">Social Reputation</h3>
+              </div>
+              <div className="text-2xl font-bold font-mono text-purple-400">{reputation.social.score.toFixed(1)}</div>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-500">SIGNAL ACCURACY</span>
+                  <span className="text-zinc-300">{(reputation.social.signal_accuracy * 100).toFixed(1)}%</span>
+                </div>
+                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-purple-500" style={{ width: `${reputation.social.signal_accuracy * 100}%` }} />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <div className="text-[10px] text-zinc-500 font-mono mb-1">RESPONSE RATE</div>
+                  <div className="text-sm font-bold font-mono">{(reputation.social.response_rate * 100).toFixed(0)}%</div>
+                </div>
+                <div className="p-3 bg-white/5 rounded-lg">
+                  <div className="text-[10px] text-zinc-500 font-mono mb-1">ALLIANCE SCORE</div>
+                  <div className="text-sm font-bold font-mono">{reputation.social.alliance_score.toFixed(1)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* History / Trust Summary */}
+          <div className="glass-card p-6 md:col-span-2 border-l-4 border-l-[#00D4AA] flex flex-col md:flex-row gap-8 items-center">
+            <div className="flex-shrink-0 relative w-32 h-32 flex items-center justify-center">
+              <svg className="w-full h-full -rotate-90">
+                <circle
+                  cx="64"
+                  cy="64"
+                  r="58"
+                  fill="transparent"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                  className="text-white/5"
+                />
+                <circle
+                  cx="64"
+                  cy="64"
+                  r="58"
+                  fill="transparent"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                  strokeDasharray={2 * Math.PI * 58}
+                  strokeDashoffset={2 * Math.PI * 58 * (1 - reputation.trust_score / 100)}
+                  className="text-[#00D4AA]"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold font-mono">{reputation.trust_score.toFixed(0)}</span>
+                <span className="text-[8px] font-mono text-zinc-500 uppercase">TRUST</span>
+              </div>
+            </div>
+
+            <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-6 w-full">
+              <div>
+                <div className="text-[10px] text-zinc-500 font-mono mb-1 uppercase">Network Age</div>
+                <div className="text-lg font-bold font-mono">{reputation.history.age_days}d</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500 font-mono mb-1 uppercase">Total Trades</div>
+                <div className="text-lg font-bold font-mono">{reputation.history.total_trades}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500 font-mono mb-1 uppercase">Vol Traded</div>
+                <div className="text-lg font-bold font-mono">${(reputation.history.total_volume / 1000).toFixed(1)}k</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500 font-mono mb-1 uppercase">Network Tier</div>
+                <div className={`text-lg font-bold font-mono ${tierColors[reputation.tier].split(' ')[0]}`}>
+                  {reputation.tier.toUpperCase()}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

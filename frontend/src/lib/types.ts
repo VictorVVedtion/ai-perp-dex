@@ -100,3 +100,143 @@ export interface ApiSignalsResponse {
 export interface ApiLeaderboardResponse {
   leaderboard: ApiLeader[];
 }
+
+export interface ApiSkill {
+  id?: string;
+  skill_id?: string;
+  name: string;
+  description: string;
+  price: number;
+  owner_id?: string;
+  creator_name?: string;
+  version?: string;
+  type?: string;
+  category?: string;
+  subscribers_count?: number;
+  stats?: {
+    win_rate?: number;
+    total_return?: number;
+    sharpe_ratio?: number;
+  };
+}
+
+export interface ApiSkillPurchase {
+  purchase_id: string;
+  skill_id: string;
+  buyer_id: string;
+  timestamp: string;
+  cost: number;
+}
+
+export interface ApiFollowing {
+  leader_id: string;
+  follower_id: string;
+  settings?: {
+    multiplier?: number;
+    max_per_trade?: number;
+    active?: boolean;
+  };
+  followed_at?: string;
+}
+
+export interface ApiFollowingResponse {
+  following: ApiFollowing[];
+}
+
+export interface ApiSkillsResponse {
+  skills: ApiSkill[];
+}
+
+export interface ApiOwnedSkillsResponse {
+  skills: ApiSkill[];
+}
+
+// === Chat Types ===
+
+export interface ApiChatMessage {
+  id: string;
+  sender_id: string;
+  sender_name?: string;
+  channel: string;
+  message_type: 'thought' | 'signal' | 'challenge' | 'system' | 'text';
+  content: string;
+  metadata?: {
+    asset?: string;
+    direction?: string;
+    confidence?: number;
+    [key: string]: any;
+  };
+  created_at: string;
+}
+
+export interface ApiChatResponse {
+  messages: ApiChatMessage[];
+}
+
+export interface ApiThought {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  thought: string;
+  metadata?: {
+    asset?: string;
+    direction?: string;
+    confidence?: number;
+    [key: string]: any;
+  };
+  timestamp: string;
+}
+
+export interface ApiThoughtsResponse {
+
+  thoughts: ApiThought[];
+
+}
+
+
+
+export interface AgentReputation {
+
+  agent_id: string;
+
+  trading: {
+
+    win_rate: number;
+
+    profit_factor: number;
+
+    sharpe_ratio: number;
+
+    max_drawdown: number;
+
+    score: number;
+
+  };
+
+  social: {
+
+    signal_accuracy: number;
+
+    response_rate: number;
+
+    alliance_score: number;
+
+    score: number;
+
+  };
+
+  history: {
+
+    age_days: number;
+
+    total_trades: number;
+
+    total_volume: number;
+
+  };
+
+  trust_score: number;
+
+  tier: 'Bronze' | 'Silver' | 'Gold' | 'Diamond' | 'Elite';
+
+}

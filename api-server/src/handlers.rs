@@ -385,3 +385,141 @@ pub async fn get_history(
     // TODO: Get from database
     Ok(Json(vec![]))
 }
+
+// ==================== Skills ====================
+
+pub async fn get_skills(
+    State(_state): State<Arc<AppState>>,
+) -> Result<Json<SkillsResponse>, StatusCode> {
+    // Return demo skills for now
+    Ok(Json(SkillsResponse {
+        skills: vec![
+            Skill {
+                skill_id: "skill_momentum_btc".to_string(),
+                name: "BTC Momentum Pro".to_string(),
+                description: "Advanced momentum strategy for BTC perpetuals. Uses RSI, MACD, and volume analysis to capture strong directional moves.".to_string(),
+                price: 99.0,
+                owner_id: "system".to_string(),
+                creator_name: "TradingBot Labs".to_string(),
+                skill_type: "strategy".to_string(),
+                category: "Momentum".to_string(),
+                subscribers_count: 1250,
+                stats: SkillStats {
+                    win_rate: 68.5,
+                    total_return: 245.0,
+                    sharpe_ratio: 2.1,
+                },
+                created_at: Utc::now().timestamp() - 86400 * 30,
+            },
+            Skill {
+                skill_id: "skill_mean_rev".to_string(),
+                name: "Mean Reversion Alpha".to_string(),
+                description: "Capitalizes on price deviations from moving averages. Works best in ranging markets with tight stop losses.".to_string(),
+                price: 149.0,
+                owner_id: "system".to_string(),
+                creator_name: "QuantAlpha".to_string(),
+                skill_type: "strategy".to_string(),
+                category: "Mean-Reversion".to_string(),
+                subscribers_count: 890,
+                stats: SkillStats {
+                    win_rate: 72.3,
+                    total_return: 180.0,
+                    sharpe_ratio: 1.8,
+                },
+                created_at: Utc::now().timestamp() - 86400 * 45,
+            },
+            Skill {
+                skill_id: "skill_trend_follow".to_string(),
+                name: "Trend Follower Elite".to_string(),
+                description: "Rides major trends using EMA crossovers and ADX filters. Designed for trending markets with trailing stops.".to_string(),
+                price: 199.0,
+                owner_id: "system".to_string(),
+                creator_name: "TrendMaster AI".to_string(),
+                skill_type: "strategy".to_string(),
+                category: "Trend-Following".to_string(),
+                subscribers_count: 2100,
+                stats: SkillStats {
+                    win_rate: 55.0,
+                    total_return: 320.0,
+                    sharpe_ratio: 2.4,
+                },
+                created_at: Utc::now().timestamp() - 86400 * 60,
+            },
+            Skill {
+                skill_id: "skill_arb_funding".to_string(),
+                name: "Funding Rate Arbitrage".to_string(),
+                description: "Exploits funding rate differentials across perpetual markets. Low risk, consistent returns.".to_string(),
+                price: 299.0,
+                owner_id: "system".to_string(),
+                creator_name: "ArbBot Pro".to_string(),
+                skill_type: "strategy".to_string(),
+                category: "Arbitrage".to_string(),
+                subscribers_count: 450,
+                stats: SkillStats {
+                    win_rate: 85.0,
+                    total_return: 45.0,
+                    sharpe_ratio: 3.2,
+                },
+                created_at: Utc::now().timestamp() - 86400 * 90,
+            },
+        ],
+    }))
+}
+
+pub async fn get_skill(
+    State(_state): State<Arc<AppState>>,
+    Path(skill_id): Path<String>,
+) -> Result<Json<Skill>, StatusCode> {
+    // TODO: Get from database
+    // For now, return mock skill
+    Ok(Json(Skill {
+        skill_id: skill_id.clone(),
+        name: "Demo Skill".to_string(),
+        description: "A demo trading strategy.".to_string(),
+        price: 99.0,
+        owner_id: "system".to_string(),
+        creator_name: "System".to_string(),
+        skill_type: "strategy".to_string(),
+        category: "General".to_string(),
+        subscribers_count: 100,
+        stats: SkillStats {
+            win_rate: 65.0,
+            total_return: 150.0,
+            sharpe_ratio: 1.5,
+        },
+        created_at: Utc::now().timestamp(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubscribeSkillRequest {
+    pub agent_id: String,
+}
+
+pub async fn subscribe_skill(
+    State(_state): State<Arc<AppState>>,
+    Path(skill_id): Path<String>,
+    Json(req): Json<SubscribeSkillRequest>,
+) -> Result<Json<SkillPurchase>, StatusCode> {
+    // TODO: Process payment and record subscription
+    Ok(Json(SkillPurchase {
+        purchase_id: Uuid::new_v4().to_string(),
+        skill_id: skill_id.clone(),
+        buyer_id: req.agent_id,
+        timestamp: Utc::now().timestamp(),
+        cost: 99.0,
+    }))
+}
+
+pub async fn get_owned_skills(
+    State(_state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<SkillsResponse>, StatusCode> {
+    let _agent_id = params.get("agent_id").ok_or(StatusCode::BAD_REQUEST)?;
+    
+    // TODO: Get from database based on agent_id
+    // For demo, return empty or mock owned skills
+    Ok(Json(SkillsResponse {
+        skills: vec![],
+    }))
+}

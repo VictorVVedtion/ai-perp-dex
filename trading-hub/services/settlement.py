@@ -158,6 +158,40 @@ class SettlementEngine:
         }
         
         print(f"💰 Settlement Engine started (simulation={self.simulation_mode})")
+        
+        # 从 Redis 加载所有余额
+        self._load_all_balances_from_redis()
+    
+    def _load_all_balances_from_redis(self):
+        """从 Redis 批量加载所有余额"""
+        r = get_redis()
+        if not r:
+            print(f"⚠️ Redis not available for balance loading")
+            return
+        
+        try:
+            all_data = r.hgetall("perpdex:balances")
+            loaded = 0
+            for agent_id, data_str in all_data.items():
+                try:
+                    d = json.loads(data_str)
+                    balance = AgentBalance(
+                        agent_id=d["agent_id"],
+                        balance_usdc=d.get("balance_usdc", 0),
+                        locked_usdc=d.get("locked_usdc", 0),
+                        total_deposited=d.get("total_deposited", 0),
+                        total_withdrawn=d.get("total_withdrawn", 0),
+                        last_updated=datetime.fromisoformat(d["last_updated"]) if d.get("last_updated") else None,
+                    )
+                    self.balances[agent_id] = balance
+                    loaded += 1
+                except Exception as e:
+                    print(f"⚠️ Failed to load balance for {agent_id}: {e}")
+            
+            if loaded > 0:
+                print(f"💰 Loaded {loaded} balances from Redis")
+        except Exception as e:
+            print(f"⚠️ Failed to load balances from Redis: {e}")
     
     def _save_balance_to_redis(self, balance: AgentBalance):
         """保存余额到 Redis"""

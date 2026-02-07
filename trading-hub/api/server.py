@@ -1,12 +1,13 @@
+import uuid
 """
 Trading Hub - API Server
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Annotated
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
@@ -198,18 +199,38 @@ manager = ConnectionManager()
 # === Request Models ===
 
 class RegisterRequest(BaseModel):
-    wallet_address: str = Field(..., min_length=1, description="Wallet address (non-empty)")
+    wallet_address: str = Field(..., min_length=1, max_length=100, description="Wallet address (non-empty)")
     display_name: Optional[str] = Field(None, max_length=50, description="Display name (max 50 chars, no HTML)")
     twitter_handle: Optional[str] = None
 
     @field_validator('wallet_address')
     @classmethod
     def validate_wallet(cls, v):
+        import re
         if not v or not v.strip():
             raise ValueError('Wallet address cannot be empty')
-        if not v.startswith('0x') and len(v) < 10:
-            raise ValueError('Invalid wallet address format')
-        return v.strip()
+        v = v.strip()
+        
+        # 拒绝包含危险字符的地址 (SQL 注入、路径遍历等)
+        dangerous_patterns = [
+            r'[;\'\"\-\-]',           # SQL 注入特征
+            r'\.\./',                  # 路径遍历
+            r'<|>',                    # HTML/XML
+            r'\s',                     # 空白字符
+        ]
+        for pattern in dangerous_patterns:
+            if re.search(pattern, v):
+                raise ValueError('Invalid characters in wallet address')
+        
+        # 验证格式: EVM (0x...) 或 Solana (base58)
+        is_evm = v.startswith('0x') and len(v) == 42 and re.match(r'^0x[a-fA-F0-9]{40}$', v)
+        is_solana = len(v) >= 32 and len(v) <= 44 and re.match(r'^[1-9A-HJ-NP-Za-km-z]+$', v)
+        is_test = v.startswith('0x') and len(v) >= 10  # 测试地址宽松验证
+        
+        if not (is_evm or is_solana or is_test):
+            raise ValueError('Invalid wallet address format. Must be EVM (0x...) or Solana address')
+        
+        return v
 
     @field_validator('display_name')
     @classmethod
@@ -462,7 +483,20 @@ async def get_agent(agent_id: str):
     agent = store.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return agent.to_dict()
+    
+    # 获取余额信息
+    result = agent.to_dict()
+    balance_info = settlement_engine.get_balance(agent_id)
+    if balance_info:
+        result["balance"] = balance_info.available
+        result["balance_locked"] = balance_info.locked_usdc
+        result["balance_total"] = balance_info.balance_usdc
+    else:
+        result["balance"] = 0.0
+        result["balance_locked"] = 0.0
+        result["balance_total"] = 0.0
+    
+    return result
 
 @app.get("/agents")
 async def list_agents(limit: int = 50, offset: int = 0):
@@ -691,6 +725,46 @@ async def create_intent(
                     total_trades=agent.total_trades + 1,
                     total_volume=agent.total_volume + req.size_usdc
                 )
+            
+            # === Copy Trade: 通知跟单者 ===
+            try:
+                async def open_copy_position(agent_id, asset, side, size_usdc, leverage, reason):
+                    """为跟单者开仓"""
+                    copy_entry_price = price_feed.get_cached_price(asset)
+                    if copy_entry_price > 0:
+                        copy_position = position_manager.open_position(
+                            agent_id=agent_id,
+                            asset=asset,
+                            side=side,
+                            size_usdc=size_usdc,
+                            entry_price=copy_entry_price,
+                            leverage=leverage,
+                        )
+                        # 更新跟单者统计
+                        copy_agent = store.get_agent(agent_id)
+                        if copy_agent:
+                            store.update_agent(
+                                agent_id,
+                                total_trades=copy_agent.total_trades + 1,
+                                total_volume=copy_agent.total_volume + size_usdc
+                            )
+                        return copy_position.to_dict()
+                    return None
+                
+                copied_trades = await copy_trade_service.on_trade(
+                    leader_id=req.agent_id,
+                    trade={
+                        "asset": req.asset,
+                        "side": req.intent_type,
+                        "size_usdc": req.size_usdc,
+                        "leverage": req.leverage,
+                    },
+                    open_position_func=open_copy_position
+                )
+                if copied_trades:
+                    logger.info(f"🔄 Copied trade to {len(copied_trades)} followers")
+            except Exception as e:
+                logger.warning(f"Copy trade failed: {e}")
 
         except ValueError as e:
             # 风控拒绝 — Intent 已创建但持仓失败，返回明确失败
@@ -1213,6 +1287,8 @@ from services.position_manager import position_manager, PositionSide
 async def startup_position_manager():
     """启动持仓管理器"""
     position_manager.price_feed = price_feed
+    # 重新从 Redis 加载持仓 (模块导入时 Redis 可能还没准备好)
+    position_manager._load_from_redis()
     await position_manager.start()
 
 
@@ -1280,7 +1356,30 @@ async def get_portfolio(
     return position_manager.get_portfolio_value(agent_id)
 
 class StopLossRequest(BaseModel):
-    price: float
+    price: Optional[float] = None
+    stop_loss_price: Optional[float] = None  # 别名
+    
+    @model_validator(mode='after')
+    def get_price(self):
+        # 支持两种字段名
+        if self.stop_loss_price is not None:
+            self.price = self.stop_loss_price
+        if self.price is None:
+            raise ValueError("price or stop_loss_price is required")
+        return self
+
+class TakeProfitRequest(BaseModel):
+    price: Optional[float] = None
+    take_profit_price: Optional[float] = None  # 别名
+    
+    @model_validator(mode='after')
+    def get_price(self):
+        # 支持两种字段名
+        if self.take_profit_price is not None:
+            self.price = self.take_profit_price
+        if self.price is None:
+            raise ValueError("price or take_profit_price is required")
+        return self
 
 @app.post("/positions/{position_id}/stop-loss")
 async def set_stop_loss(
@@ -1297,15 +1396,30 @@ async def set_stop_loss(
         # 验证所有权
         verify_agent_owns_resource(auth, pos.agent_id, "position")
         
+        # 验证仓位是否已平仓
+        if not pos.is_open:
+            raise HTTPException(400, "Position is already closed")
+        
+        # 验证价格有效性
+        if req.price <= 0:
+            raise HTTPException(400, "Stop loss price must be greater than 0")
+        
+        # 验证止损逻辑: 多仓止损应低于入场价，空仓止损应高于入场价
+        side_value = pos.side.value if hasattr(pos.side, 'value') else str(pos.side)
+        if side_value == "long" and req.price >= pos.entry_price:
+            raise HTTPException(status_code=400, detail=f"Stop loss for LONG position must be below entry price (${pos.entry_price:.2f})")
+        if side_value == "short" and req.price <= pos.entry_price:
+            raise HTTPException(status_code=400, detail=f"Stop loss for SHORT position must be above entry price (${pos.entry_price:.2f})")
+        
         position_manager.set_stop_loss(position_id, req.price)
-        return {"success": True}
+        return {"success": True, "position": pos.to_dict()}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
 @app.post("/positions/{position_id}/take-profit")
 async def set_take_profit(
     position_id: str, 
-    req: StopLossRequest,
+    req: TakeProfitRequest,
     auth: AgentAuth = Depends(verify_agent)
 ):
     """设置止盈 (需要认证，只能操作自己的持仓)"""
@@ -1317,8 +1431,23 @@ async def set_take_profit(
         # 验证所有权
         verify_agent_owns_resource(auth, pos.agent_id, "position")
         
+        # 验证仓位是否已平仓
+        if not pos.is_open:
+            raise HTTPException(400, "Position is already closed")
+        
+        # 验证价格有效性
+        if req.price <= 0:
+            raise HTTPException(400, "Take profit price must be greater than 0")
+        
+        # 验证止盈逻辑: 多仓止盈应高于入场价，空仓止盈应低于入场价
+        side_value = pos.side.value if hasattr(pos.side, 'value') else str(pos.side)
+        if side_value == "long" and req.price <= pos.entry_price:
+            raise HTTPException(status_code=400, detail=f"Take profit for LONG position must be above entry price (${pos.entry_price:.2f})")
+        if side_value == "short" and req.price >= pos.entry_price:
+            raise HTTPException(status_code=400, detail=f"Take profit for SHORT position must be below entry price (${pos.entry_price:.2f})")
+        
         position_manager.set_take_profit(position_id, req.price)
-        return {"success": True}
+        return {"success": True, "position": pos.to_dict()}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -1335,6 +1464,10 @@ async def close_position(
         
         # 验证所有权
         verify_agent_owns_resource(auth, pos.agent_id, "position")
+        
+        # 验证仓位是否已平仓
+        if not pos.is_open:
+            raise HTTPException(400, "Position is already closed")
         
         asset = pos.asset.replace("-PERP", "")
         price_data = await price_feed.get_price(asset)
@@ -1616,6 +1749,506 @@ async def get_inbox(agent_id: str, limit: int = 50):
     messages = agent_comm.get_inbox(agent_id, limit)
     return {"messages": [m.to_dict() for m in messages]}
 
+
+# ==========================================
+# Agent Communication API (AI Native)
+# ==========================================
+
+class SendMessageRequest(BaseModel):
+    to_agent: str
+    message: str
+
+@app.post("/agents/{agent_id}/message")
+async def send_message(
+    agent_id: str,
+    req: SendMessageRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """Agent 间发送消息"""
+    verify_agent_owns_resource(auth, agent_id, "message")
+    
+    from services.agent_comms import AgentMessage, MessageType
+    msg = AgentMessage(
+        message_id=str(uuid.uuid4())[:12],
+        msg_type=MessageType.CHAT,
+        from_agent=agent_id,
+        to_agent=req.to_agent,
+        payload={"content": req.message}
+    )
+    msg_id = await agent_comm.send(msg)
+    return {"success": True, "message_id": msg_id}
+
+
+class TradeRequestModel(BaseModel):
+    to_agent: str
+    asset: str
+    side: str  # "long" | "short"
+    size_usdc: float
+    price: Optional[float] = None
+    message: Optional[str] = None
+
+@app.post("/agents/{agent_id}/trade-request")
+async def send_trade_request(
+    agent_id: str,
+    req: TradeRequestModel,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """发送交易请求给其他 Agent"""
+    verify_agent_owns_resource(auth, agent_id, "trade_request")
+    
+    msg_id = await agent_comm.send_trade_request(
+        from_agent=agent_id,
+        to_agent=req.to_agent,
+        trade={
+            "asset": req.asset,
+            "side": req.side,
+            "size_usdc": req.size_usdc,
+            "price": req.price,
+            "message": req.message,
+        }
+    )
+    return {"success": True, "request_id": msg_id}
+
+
+@app.post("/agents/{agent_id}/trade-accept/{request_id}")
+async def accept_trade_request(
+    agent_id: str,
+    request_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """接受交易请求"""
+    verify_agent_owns_resource(auth, agent_id, "trade_accept")
+    
+    msg_id = await agent_comm.accept_trade(agent_id, request_id)
+    return {"success": True, "message_id": msg_id}
+
+
+class StrategyOfferRequest(BaseModel):
+    strategy_name: str
+    description: str
+    price_usdc: float
+    performance: Optional[dict] = None  # {"win_rate": 0.65, "sharpe": 1.2}
+
+@app.post("/agents/{agent_id}/strategy/offer")
+async def offer_strategy(
+    agent_id: str,
+    req: StrategyOfferRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """出售策略"""
+    verify_agent_owns_resource(auth, agent_id, "strategy_offer")
+    
+    strategy = {
+        "name": req.strategy_name,
+        "description": req.description,
+        "price_usdc": req.price_usdc,
+        "performance": req.performance or {},
+    }
+    msg_id = await agent_comm.offer_strategy(
+        from_agent=agent_id,
+        strategy=strategy
+    )
+    return {"success": True, "offer_id": msg_id}
+
+
+@app.get("/strategies/marketplace")
+async def get_strategy_marketplace(limit: int = 20):
+    """获取策略市场"""
+    # 从广播消息中获取策略 offers
+    offers = []
+    seen = set()
+    for agent_id in agent_comm.agents.keys():
+        messages = agent_comm.get_inbox(agent_id, 100)
+        for msg in messages:
+            if msg.msg_type == MessageType.STRATEGY_OFFER and msg.message_id not in seen:
+                seen.add(msg.message_id)
+                offers.append({
+                    "offer_id": msg.message_id,
+                    "seller": msg.from_agent,
+                    "strategy_name": msg.payload.get("name"),
+                    "description": msg.payload.get("description"),
+                    "price_usdc": msg.payload.get("price_usdc"),
+                    "performance": msg.payload.get("performance", {}),
+                    "timestamp": msg.timestamp.isoformat(),
+                })
+    return {"strategies": offers[:limit]}
+
+
+class CreateAllianceRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50, description="Alliance name (1-50 chars)")
+    description: Optional[str] = Field(default="", max_length=500)
+    
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Alliance name cannot be empty")
+        return v
+
+@app.post("/alliances")
+async def create_alliance(
+    req: CreateAllianceRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """创建 Agent 联盟"""
+    # 检查是否已存在同名联盟
+    for alliance in agent_comm.alliances.values():
+        if alliance.name.lower() == req.name.lower():
+            raise HTTPException(400, f"Alliance with name '{req.name}' already exists")
+    
+    alliance = agent_comm.create_alliance(auth.agent_id, req.name)
+    return {
+        "success": True,
+        "alliance": {
+            "alliance_id": alliance.alliance_id,
+            "name": alliance.name,
+            "leader": alliance.leader_id,
+            "members": list(alliance.members),
+        }
+    }
+
+
+@app.get("/alliances")
+async def list_alliances():
+    """列出所有联盟"""
+    alliances = []
+    for aid, alliance in agent_comm.alliances.items():
+        alliances.append({
+            "alliance_id": alliance.alliance_id,
+            "name": alliance.name,
+            "leader": alliance.leader_id,
+            "member_count": len(alliance.members),
+        })
+    return {"alliances": alliances}
+
+
+@app.post("/alliances/{alliance_id}/invite/{invitee_id}")
+async def invite_to_alliance(
+    alliance_id: str,
+    invitee_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """邀请 Agent 加入联盟"""
+    # 验证联盟存在
+    alliance = agent_comm.alliances.get(alliance_id)
+    if not alliance:
+        raise HTTPException(404, f"Alliance not found: {alliance_id}")
+    
+    # 不能邀请自己
+    if invitee_id == auth.agent_id:
+        raise HTTPException(400, "Cannot invite yourself")
+    
+    # 验证被邀请者存在
+    invitee = store.get_agent(invitee_id)
+    if not invitee:
+        raise HTTPException(404, f"Agent not found: {invitee_id}")
+    
+    # 验证被邀请者不在联盟中
+    if invitee_id in alliance.members:
+        raise HTTPException(400, f"Agent {invitee_id} is already in this alliance")
+    
+    msg_id = await agent_comm.invite_to_alliance(alliance_id, auth.agent_id, invitee_id)
+    return {"success": True, "invite_id": msg_id}
+
+
+@app.post("/alliances/{alliance_id}/join")
+async def join_alliance(
+    alliance_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """加入联盟"""
+    # 验证联盟存在
+    alliance = agent_comm.alliances.get(alliance_id)
+    if not alliance:
+        raise HTTPException(404, f"Alliance not found: {alliance_id}")
+    
+    # 验证不是已经在联盟中
+    if auth.agent_id in alliance.members:
+        raise HTTPException(400, "Already a member of this alliance")
+    
+    agent_comm.join_alliance(alliance_id, auth.agent_id)
+    return {"success": True}
+
+
+@app.get("/alliances/{alliance_id}/members")
+async def get_alliance_members(alliance_id: str):
+    """获取联盟成员"""
+    members = agent_comm.get_alliance_members(alliance_id)
+    return {"members": [m.to_dict() for m in members]}
+
+
+# ==========================================
+# Copy Trade API (跟单系统)
+# ==========================================
+
+from services.copy_trade import copy_trade_service
+
+class FollowRequest(BaseModel):
+    multiplier: float = Field(default=1.0, gt=0, le=3.0, description="Position multiplier (0-3x)")
+    max_per_trade: float = Field(default=100.0, gt=0, le=1000.0, description="Max per trade ($0-1000)")
+    allocation: Optional[float] = Field(default=None, gt=0, description="Alias for max_per_trade")
+    
+    @model_validator(mode='after')
+    def handle_allocation(self):
+        # allocation 是 max_per_trade 的别名
+        if self.allocation is not None:
+            self.max_per_trade = min(self.allocation, 1000.0)
+        return self
+
+@app.post("/agents/{agent_id}/follow/{leader_id}")
+async def follow_trader(
+    agent_id: str,
+    leader_id: str,
+    req: FollowRequest = FollowRequest(),
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """开始跟单某个 Agent"""
+    verify_agent_owns_resource(auth, agent_id, "follow")
+    
+    # 验证 leader 存在
+    leader = store.get_agent(leader_id)
+    if not leader:
+        raise HTTPException(404, f"Leader agent not found: {leader_id}")
+    
+    # 不能跟单自己 (copy_trade_service 也有检查，但这里提前返回更好的错误信息)
+    if agent_id == leader_id:
+        raise HTTPException(400, "Cannot follow yourself")
+    
+    try:
+        sub = copy_trade_service.follow(
+            follower_id=agent_id,
+            leader_id=leader_id,
+            multiplier=req.multiplier,
+            max_per_trade=req.max_per_trade
+        )
+        return {"success": True, "subscription": sub.to_dict()}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/agents/{agent_id}/follow/{leader_id}")
+async def unfollow_trader(
+    agent_id: str,
+    leader_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """停止跟单"""
+    verify_agent_owns_resource(auth, agent_id, "unfollow")
+    
+    success = copy_trade_service.unfollow(agent_id, leader_id)
+    return {"success": success}
+
+
+@app.get("/agents/{agent_id}/followers")
+async def get_followers(agent_id: str):
+    """获取该 Agent 的所有跟单者"""
+    followers = copy_trade_service.get_followers(agent_id)
+    return {
+        "leader_id": agent_id,
+        "follower_count": len(followers),
+        "followers": [f.to_dict() for f in followers]
+    }
+
+
+@app.get("/agents/{agent_id}/following")
+async def get_following(agent_id: str, auth: AgentAuth = Depends(verify_agent)):
+    """获取该 Agent 关注的所有 leaders"""
+    verify_agent_owns_resource(auth, agent_id, "following")
+    
+    following = copy_trade_service.get_following(agent_id)
+    return {
+        "follower_id": agent_id,
+        "following_count": len(following),
+        "following": [f.to_dict() for f in following]
+    }
+
+
+@app.get("/copy-trade/stats")
+async def get_copy_trade_stats():
+    """获取跟单系统统计"""
+    return copy_trade_service.get_stats()
+
+
+# ==========================================
+# Skill Marketplace API (技能市场)
+# ==========================================
+
+from services.skill_marketplace import skill_marketplace
+
+class PublishSkillRequest(BaseModel):
+    name: str
+    description: str
+    price_usdc: float
+    category: str = "strategy"  # strategy, signal, indicator
+    strategy_code: Optional[str] = None
+    performance: Optional[dict] = None
+
+@app.get("/skills")
+async def list_skills(
+    category: Optional[str] = None,
+    seller_id: Optional[str] = None,
+    sort_by: str = "sales",
+    limit: int = 50
+):
+    """列出市场上的技能"""
+    skills = skill_marketplace.list_skills(
+        category=category,
+        seller_id=seller_id,
+        sort_by=sort_by,
+        limit=limit
+    )
+    return {
+        "skills": [s.to_dict() for s in skills],
+        "total": len(skills)
+    }
+
+
+@app.post("/skills")
+async def publish_skill(
+    req: PublishSkillRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """发布新技能"""
+    skill = skill_marketplace.publish_skill(
+        seller_id=auth.agent_id,
+        name=req.name,
+        description=req.description,
+        price_usdc=req.price_usdc,
+        category=req.category,
+        strategy_code=req.strategy_code,
+        performance=req.performance
+    )
+    return {"success": True, "skill": skill.to_dict()}
+
+
+@app.get("/skills/{skill_id}")
+async def get_skill(skill_id: str):
+    """获取技能详情"""
+    skill = skill_marketplace.get_skill(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return skill.to_dict()
+
+
+@app.post("/skills/{skill_id}/purchase")
+async def purchase_skill(
+    skill_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """购买技能"""
+    def deduct_balance(buyer_id: str, amount: float, seller_id: str) -> bool:
+        """扣款并转账给卖家"""
+        try:
+            buyer_balance = settlement_engine.get_balance(buyer_id)
+            if buyer_balance.balance_usdc < amount:
+                return False
+            
+            # 扣除买家余额
+            buyer_balance.balance_usdc -= amount
+            buyer_balance.last_updated = datetime.now()
+            settlement_engine._save_balance_to_redis(buyer_balance)
+            
+            # 增加卖家余额 (扣除 5% 平台费)
+            platform_fee = amount * 0.05
+            seller_amount = amount - platform_fee
+            seller_balance = settlement_engine.get_balance(seller_id)
+            seller_balance.balance_usdc += seller_amount
+            seller_balance.last_updated = datetime.now()
+            settlement_engine._save_balance_to_redis(seller_balance)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to transfer: {e}")
+            return False
+    
+    try:
+        purchase = skill_marketplace.purchase_skill(
+            buyer_id=auth.agent_id,
+            skill_id=skill_id,
+            deduct_balance_func=deduct_balance
+        )
+        return {"success": True, "purchase": purchase.to_dict()}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/agents/{agent_id}/skills")
+async def get_my_skills(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """获取已购买的技能"""
+    verify_agent_owns_resource(auth, agent_id, "skills")
+    
+    skills = skill_marketplace.get_my_skills(agent_id)
+    return {"skills": skills, "total": len(skills)}
+
+
+@app.get("/skills/marketplace/stats")
+async def get_marketplace_stats():
+    """获取市场统计"""
+    return skill_marketplace.get_stats()
+
+
+class RunSkillRequest(BaseModel):
+    skill_id: str
+    params: Optional[dict] = None
+
+@app.post("/agents/{agent_id}/skills/run")
+async def run_skill(
+    agent_id: str,
+    req: RunSkillRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """执行已购买的技能/策略"""
+    verify_agent_owns_resource(auth, agent_id, "run_skill")
+    
+    # 检查是否已购买
+    my_skills = skill_marketplace.get_my_skills(agent_id)
+    owned_skill_ids = [s["skill"]["skill_id"] for s in my_skills]
+    
+    if req.skill_id not in owned_skill_ids:
+        raise HTTPException(status_code=403, detail="You don't own this skill")
+    
+    skill = skill_marketplace.get_skill(req.skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    
+    # 执行策略 (简化版本 - 基于性能数据生成建议)
+    params = req.params or {}
+    asset = params.get("asset", "BTC-PERP")
+    current_price = price_feed.get_cached_price(asset.replace("-PERP", ""))
+    
+    # 基于策略的 win_rate 生成建议
+    win_rate = skill.performance.get("win_rate", 0.5)
+    
+    if win_rate > 0.6:
+        suggestion = {
+            "action": "long",
+            "confidence": win_rate,
+            "size_suggestion": params.get("max_size", 100),
+            "leverage_suggestion": min(int(win_rate * 10), 5),
+            "reason": f"Strategy '{skill.name}' suggests bullish bias (win_rate: {win_rate*100:.0f}%)"
+        }
+    else:
+        suggestion = {
+            "action": "wait",
+            "confidence": 1 - win_rate,
+            "reason": f"Strategy '{skill.name}' suggests caution (win_rate: {win_rate*100:.0f}%)"
+        }
+    
+    return {
+        "success": True,
+        "skill_id": req.skill_id,
+        "skill_name": skill.name,
+        "asset": asset,
+        "current_price": current_price,
+        "suggestion": suggestion,
+        "note": "This is a simplified execution. Full strategy code execution coming soon."
+    }
+
+
 # ==========================================
 # Settlement API
 # ==========================================
@@ -1668,6 +2301,21 @@ async def withdraw(
     # 验证: 只能为自己出金
     if auth.agent_id != req.agent_id:
         raise ForbiddenError("Cannot withdraw for another agent")
+    
+    # 计算锁定的保证金 (持仓中) — Position 无 margin 属性，需手动计算
+    locked_margin = sum(
+        p.size_usdc / p.leverage for p in position_manager.positions.values()
+        if p.agent_id == auth.agent_id and p.is_open
+    )
+    
+    # 获取当前余额
+    balance_info = settlement_engine.get_balance(auth.agent_id)
+    if not balance_info:
+        raise HTTPException(404, "Agent balance not found")
+    
+    available = balance_info.available - locked_margin
+    if req.amount > available:
+        raise HTTPException(400, f"Insufficient available balance. Total: ${balance_info.available:.2f}, Locked margin: ${locked_margin:.2f}, Available: ${available:.2f}")
     
     success = settlement_engine.withdraw(auth.agent_id, req.amount)
     if not success:
@@ -2180,6 +2828,275 @@ async def get_current_agent(auth: AgentAuth = Depends(verify_agent)):
             "agent_id": auth.agent_id,
             "scopes": auth.scopes,
             "authenticated_at": auth.authenticated_at.isoformat(),
+        }
+    }
+
+
+# ==========================================
+# AI Native - Reputation System
+# ==========================================
+
+from services.reputation import get_reputation_service, AgentReputation
+
+@app.get("/agents/{agent_id}/reputation")
+async def get_agent_reputation(agent_id: str):
+    """
+    Get full reputation profile for an agent
+    
+    Returns:
+    - Trading metrics (win rate, profit factor, Sharpe ratio)
+    - Social metrics (signal accuracy, response rate)
+    - Trust score and tier
+    """
+    rep_service = get_reputation_service()
+    rep = rep_service.calculate_reputation(agent_id)
+    
+    return {
+        "agent_id": agent_id,
+        "trading": {
+            "win_rate": rep.win_rate,
+            "profit_factor": rep.profit_factor,
+            "sharpe_ratio": rep.sharpe_ratio,
+            "max_drawdown": rep.max_drawdown,
+            "score": rep.trading_score,
+        },
+        "social": {
+            "signal_accuracy": rep.signal_accuracy,
+            "response_rate": rep.response_rate,
+            "alliance_score": rep.alliance_score,
+            "score": rep.social_score,
+        },
+        "history": {
+            "age_days": rep.age_days,
+            "total_trades": rep.total_trades,
+            "total_volume": rep.total_volume,
+        },
+        "trust_score": rep.trust_score,
+        "tier": rep.tier,
+    }
+
+@app.get("/leaderboard/reputation")
+async def get_reputation_leaderboard(limit: int = 20):
+    """Get agents ranked by reputation/trust score"""
+    rep_service = get_reputation_service()
+    return {
+        "leaderboard": rep_service.get_leaderboard(limit=limit),
+    }
+
+
+# ==========================================
+# AI Native - Agent Chat / A2A Communication
+# ==========================================
+
+from services.agent_comms import agent_comm, chat_db, MessageType
+
+VALID_MESSAGE_TYPES = {"thought", "chat", "signal", "system", "alert"}
+
+class SendMessageRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=5000, description="Message content (1-5000 chars)")
+    message_type: str = Field(default="thought", description="Message type: thought, chat, signal, system, alert")
+    recipient_id: Optional[str] = None
+    
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Message content cannot be empty")
+        return v
+    
+    @field_validator('message_type')
+    @classmethod
+    def validate_message_type(cls, v):
+        if v not in VALID_MESSAGE_TYPES:
+            raise ValueError(f"Invalid message_type. Must be one of: {VALID_MESSAGE_TYPES}")
+        return v
+
+@app.post("/chat/send")
+async def send_chat_message(
+    req: SendMessageRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """Send a message to the public chat"""
+    # Save to database for UI persistence
+    msg_id = chat_db.save_message(
+        sender_id=auth.agent_id,
+        content=req.content,
+        message_type=req.message_type,
+        channel="private" if req.recipient_id else "public",
+        metadata={},
+    )
+    
+    # Get sender name
+    agent = store.get_agent(auth.agent_id)
+    sender_name = agent.display_name if agent else auth.agent_id
+    
+    message_data = {
+        "id": msg_id,
+        "sender_id": auth.agent_id,
+        "sender_name": sender_name,
+        "content": req.content,
+        "message_type": req.message_type,
+        "timestamp": datetime.now().isoformat(),
+    }
+    
+    # Broadcast via WebSocket
+    await manager.broadcast({
+        "type": "chat_message",
+        "data": message_data
+    })
+    
+    return {
+        "success": True,
+        "message": message_data,
+    }
+
+@app.post("/chat/thought")
+async def broadcast_thought(
+    content: str = Body(..., embed=True),
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """Broadcast a thought to the public feed"""
+    msg_id = chat_db.save_message(
+        sender_id=auth.agent_id,
+        content=content,
+        message_type="thought",
+    )
+    return {"success": True, "message_id": msg_id}
+
+class SignalBroadcastRequest(BaseModel):
+    asset: str
+    direction: str
+    confidence: float
+    rationale: str
+
+@app.post("/chat/signal")
+async def broadcast_signal(
+    req: SignalBroadcastRequest,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """Broadcast a trading signal"""
+    msg_id = chat_db.save_message(
+        sender_id=auth.agent_id,
+        content=f"{req.direction.upper()} {req.asset} | Confidence: {req.confidence:.0%} | {req.rationale}",
+        message_type="signal",
+        metadata={
+            "asset": req.asset,
+            "direction": req.direction,
+            "confidence": req.confidence,
+        },
+    )
+    return {"success": True, "message_id": msg_id}
+
+@app.get("/chat/messages")
+async def get_chat_messages(
+    channel: str = "public",
+    limit: int = 50,
+    auth: AgentAuth = Depends(verify_agent_optional)
+):
+    """Get recent messages from a channel"""
+    messages = chat_db.get_messages(channel=channel, limit=limit)
+    return {"messages": messages}
+
+@app.get("/chat/thoughts")
+async def get_thought_stream(limit: int = 20):
+    """Get live thought stream from all agents"""
+    return {"thoughts": chat_db.get_thoughts_stream(limit=limit)}
+
+
+# ==========================================
+# AI Native - Agent Runtime
+# ==========================================
+
+from services.agent_runtime import agent_runtime, AgentConfig, create_demo_agent
+
+class StartAgentRequest(BaseModel):
+    heartbeat_interval: int = 60
+    min_confidence: float = 0.6
+    max_position_size: float = 100
+    markets: List[str] = ["BTC-PERP", "ETH-PERP"]
+    strategy: str = "momentum"
+    auto_broadcast: bool = True
+
+@app.post("/runtime/agents/{agent_id}/start")
+async def start_agent_runtime(
+    agent_id: str,
+    req: StartAgentRequest = None,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """
+    启动 Agent 自主运行
+    
+    Agent 将按照心跳间隔自动：
+    - 分析市场
+    - 做出决策
+    - 广播思考过程
+    """
+    # 只能启动自己
+    if auth.agent_id != agent_id:
+        raise HTTPException(403, "Can only start your own agent")
+    
+    # 注册配置
+    config = AgentConfig(
+        agent_id=agent_id,
+        heartbeat_interval=req.heartbeat_interval if req else 60,
+        min_confidence=req.min_confidence if req else 0.6,
+        max_position_size=req.max_position_size if req else 100,
+        markets=req.markets if req else ["BTC-PERP", "ETH-PERP"],
+        strategy=req.strategy if req else "momentum",
+        auto_broadcast=req.auto_broadcast if req else True,
+    )
+    agent_runtime.register_agent(config)
+    
+    # 启动
+    success = await agent_runtime.start_agent(agent_id)
+    if not success:
+        raise HTTPException(400, "Failed to start agent")
+    
+    return {
+        "success": True,
+        "message": f"Agent {agent_id} is now running autonomously",
+        "config": {
+            "heartbeat_interval": config.heartbeat_interval,
+            "markets": config.markets,
+            "strategy": config.strategy,
+        }
+    }
+
+@app.post("/runtime/agents/{agent_id}/stop")
+async def stop_agent_runtime(
+    agent_id: str,
+    auth: AgentAuth = Depends(verify_agent)
+):
+    """停止 Agent 自主运行"""
+    if auth.agent_id != agent_id:
+        raise HTTPException(403, "Can only stop your own agent")
+    
+    success = await agent_runtime.stop_agent(agent_id)
+    return {"success": success, "message": f"Agent {agent_id} stopped"}
+
+@app.get("/runtime/agents/{agent_id}/status")
+async def get_agent_runtime_status(agent_id: str):
+    """获取 Agent 运行状态"""
+    return agent_runtime.get_status(agent_id)
+
+@app.get("/runtime/status")
+async def get_runtime_status():
+    """获取所有 Agent 运行状态"""
+    return agent_runtime.get_status()
+
+@app.post("/runtime/demo/start")
+async def start_demo_agent():
+    """启动一个演示 Agent（无需认证）"""
+    config = create_demo_agent("demo_agent_001")
+    await agent_runtime.start_agent("demo_agent_001")
+    return {
+        "success": True,
+        "agent_id": "demo_agent_001",
+        "message": "Demo agent started. Watch the thought stream!",
+        "config": {
+            "heartbeat_interval": config.heartbeat_interval,
+            "markets": config.markets,
         }
     }
 

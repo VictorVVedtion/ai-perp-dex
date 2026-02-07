@@ -274,6 +274,7 @@ class PositionManager:
         
         if loaded > 0:
             logger.info(f"📊 Loaded {loaded} positions from Redis")
+            print(f"📊 Loaded {loaded} positions from Redis")
     
     async def start(self):
         """启动持仓监控"""

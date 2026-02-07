@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Bot, Medal, Trophy, Award } from 'lucide-react';
 
 interface Agent {
   agent_id: string;
@@ -14,7 +15,16 @@ interface Agent {
 }
 
 import { API_BASE_URL } from '@/lib/config';
+import { formatUsd } from '@/lib/utils';
 const API = API_BASE_URL;
+
+// Rank badge component
+const RankBadge = ({ rank }: { rank: number }) => {
+  if (rank === 0) return <Trophy className="w-5 h-5 text-yellow-400" />;
+  if (rank === 1) return <Medal className="w-5 h-5 text-gray-300" />;
+  if (rank === 2) return <Award className="w-5 h-5 text-amber-600" />;
+  return <Bot className="w-5 h-5 text-zinc-400" />;
+};
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -61,12 +71,6 @@ export default function AgentsPage() {
     return { label: 'High', color: 'text-[#FF6B35] bg-[#FF6B35]/10' };
   };
 
-  const formatVolume = (vol: number) => {
-    if (vol >= 1e6) return `$${(vol / 1e6).toFixed(1)}M`;
-    if (vol >= 1e3) return `$${(vol / 1e3).toFixed(0)}K`;
-    return `$${vol.toFixed(0)}`;
-  };
-
   const totalPnl = agents.reduce((sum, a) => sum + (a.pnl || 0), 0);
   const avgWinRate = agents.length > 0 
     ? agents.reduce((sum, a) => sum + (a.reputation_score || 0.5), 0) / agents.length * 100
@@ -103,7 +107,9 @@ export default function AgentsPage() {
 
       {agents.length === 0 ? (
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-12 text-center">
-          <div className="text-4xl mb-4">🤖</div>
+          <div className="flex justify-center mb-4">
+            <Bot className="w-12 h-12 text-zinc-600" />
+          </div>
           <h2 className="text-xl font-bold mb-2">No Agents Yet</h2>
           <p className="text-zinc-500 mb-6">Be the first to register and start trading!</p>
           <Link
@@ -119,13 +125,13 @@ export default function AgentsPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500">Agent</th>
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">PnL</th>
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Volume</th>
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-right">Trades</th>
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-center">Risk</th>
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500 text-center">Status</th>
-                  <th className="px-6 py-4 text-xs font-mono uppercase text-zinc-500"></th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500">Agent</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-right">PnL</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-right">Volume</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-right">Trades</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-center">Risk</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500 text-center">Status</th>
+                  <th className="px-4 py-3 text-xs font-mono uppercase text-zinc-500"></th>
                 </tr>
               </thead>
               <tbody>
@@ -133,10 +139,10 @@ export default function AgentsPage() {
                   const risk = getRiskLevel(agent.reputation_score || 0.5);
                   return (
                     <tr key={agent.agent_id} className="border-b border-zinc-800/50 hover:bg-zinc-900/30 transition-colors">
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-lg">
-                            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🤖'}
+                          <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center">
+                            <RankBadge rank={i} />
                           </div>
                           <div>
                             <div className="font-bold text-white">{agent.display_name || agent.agent_id}</div>
@@ -144,28 +150,28 @@ export default function AgentsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 py-3 text-right">
                         <span className={`font-mono font-bold ${(agent.pnl || 0) >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
                           {(agent.pnl || 0) >= 0 ? '+' : ''}${(agent.pnl || 0).toFixed(2)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-zinc-300">
-                        {formatVolume(agent.total_volume || 0)}
+                      <td className="px-4 py-3 text-right font-mono text-zinc-300">
+                        {formatUsd(agent.total_volume || 0)}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-zinc-300">
+                      <td className="px-4 py-3 text-right font-mono text-zinc-300">
                         {agent.total_trades || 0}
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-4 py-3 text-center">
                         <span className={`text-xs font-bold px-2 py-1 rounded ${risk.color}`}>
                           {risk.label}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-4 py-3 text-center">
                         <span className={`text-xs font-bold px-2 py-1 rounded ${getStatusColor(agent.status)}`}>
                           {agent.status || 'active'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 py-3 text-right">
                         <Link
                           href={`/agents/${agent.agent_id}`}
                           className="text-[#00D4AA] hover:text-[#00F0C0] text-sm font-medium"

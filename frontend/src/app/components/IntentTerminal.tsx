@@ -21,17 +21,17 @@ interface ParsedIntent {
 
 const HELP_TEXT = `
 ╔══════════════════════════════════════════════════════════════╗
-║                    🤖 AI PERP DEX TERMINAL                   ║
+║                    AI PERP DEX TERMINAL                      ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  支持的命令:                                                  ║
 ║                                                               ║
-║  📈 做多/开多 ETH $100 5倍杠杆                                ║
-║  📉 做空/开空 BTC $500 10x                                    ║
-║  ❌ 平掉/关闭 ETH 仓位                                        ║
-║  👀 显示/查看 我的持仓                                        ║
-║  🔔 盯着 SOL，跌破 90 就买入                                  ║
+║  [+] 做多/开多 ETH $100 5倍杠杆                               ║
+║  [-] 做空/开空 BTC $500 10x                                   ║
+║  [x] 平掉/关闭 ETH 仓位                                       ║
+║  [?] 显示/查看 我的持仓                                       ║
+║  [!] 盯着 SOL，跌破 90 就买入                                 ║
 ║                                                               ║
-║  💡 提示: 支持自然语言，随便说!                               ║
+║  TIP: 支持自然语言，随便说!                                   ║
 ╚══════════════════════════════════════════════════════════════╝
 `.trim();
 
@@ -75,7 +75,8 @@ function useTypewriter(text: string, speed: number = 20) {
     let i = 0;
     const timer = setInterval(() => {
       if (i < text.length) {
-        setDisplayed(prev => prev + text[i]);
+        const char = text.charAt(i); // charAt returns '' for out-of-range, never undefined
+        setDisplayed(prev => prev + char);
         i++;
       } else {
         setIsComplete(true);
@@ -126,9 +127,23 @@ export default function IntentTerminal() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [agentId, setAgentId] = useState('');
+  const [apiKey, setApiKey] = useState('');
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 从 localStorage 读取认证信息（统一使用 perp_dex_auth）
+  useEffect(() => {
+    const saved = localStorage.getItem('perp_dex_auth');
+    if (saved) {
+      try {
+        const { agentId: id, apiKey: key } = JSON.parse(saved);
+        if (id) setAgentId(id);
+        if (key) setApiKey(key);
+      } catch {}
+    }
+  }, []);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -142,23 +157,29 @@ export default function IntentTerminal() {
     inputRef.current?.focus();
   }, []);
 
-  // Execute trade
+  // Execute trade — 使用 /intents 端点（需要已登录）
   const executeTrade = async (intent: ParsedIntent): Promise<string> => {
+    if (!agentId || !apiKey) {
+      return '[X] 请先登录! 前往 /join 注册 Agent';
+    }
     if (!intent.market) {
-      return '❌ 请指定交易市场 (BTC, ETH, SOL)';
+      return '[X] 请指定交易市场 (BTC, ETH, SOL)';
     }
     if (!intent.size || intent.size <= 0) {
-      return '❌ 请指定交易金额，例如 $100';
+      return '[X] 请指定交易金额，例如 $100';
     }
 
     try {
-      const response = await fetch('${API_BASE_URL}/trade/request', {
+      const response = await fetch(`${API_BASE_URL}/intents`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
         body: JSON.stringify({
-          agent_id: 'intent_terminal',
+          agent_id: agentId,
+          action: intent.action,
           market: intent.market,
-          side: intent.action,
           size_usdc: intent.size,
           leverage: intent.leverage || 5,
         }),
@@ -166,85 +187,101 @@ export default function IntentTerminal() {
 
       if (response.ok) {
         const data = await response.json();
-        const emoji = intent.action === 'long' ? '📈' : '📉';
+        const arrow = intent.action === 'long' ? '[+] LONG' : '[-] SHORT';
+        const pos = data.position || {};
         return `
-✅ 订单已提交!
-${emoji} ${intent.action.toUpperCase()} ${intent.market}
-💰 金额: $${intent.size} USDC
-⚡ 杠杆: ${intent.leverage}x
-🎫 订单ID: ${data.request_id || data.id || 'created'}
+[OK] 订单已提交!
+${arrow} ${intent.market}
+> 金额: $${intent.size} USDC
+> 杠杆: ${intent.leverage || 5}x
+> 入场价: $${pos.entry_price || 'market'}
+> 持仓ID: ${pos.position_id || data.request_id || 'created'}
         `.trim();
       } else {
         const error = await response.text();
-        return `❌ 交易失败: ${error}`;
+        return `[X] 交易失败: ${error}`;
       }
     } catch {
-      return '❌ 网络错误 - 后端服务是否在运行?';
+      return '[X] 网络错误 - 后端服务是否在运行?';
     }
   };
 
-  // Get positions
+  // Get positions — 使用已登录的 agent_id
   const getPositions = async (): Promise<string> => {
+    if (!agentId) {
+      return '[X] 请先登录! 前往 /join 注册 Agent';
+    }
     try {
-      const response = await fetch('${API_BASE_URL}/positions/intent_terminal');
+      const response = await fetch(`${API_BASE_URL}/positions/${agentId}`, {
+        headers: apiKey ? { 'X-API-Key': apiKey } : {},
+      });
       if (response.ok) {
-        const positions = await response.json();
+        const data = await response.json();
+        const positions = Array.isArray(data) ? data : (data.positions || []);
         if (!positions || positions.length === 0) {
-          return '📭 当前没有持仓';
+          return '[i] 当前没有持仓';
         }
-        let output = '📊 当前持仓:\n';
+        let output = `# ${agentId} 当前持仓:\n`;
         output += '─'.repeat(40) + '\n';
         for (const p of positions) {
-          const pnlEmoji = (p.unrealized_pnl || 0) >= 0 ? '🟢' : '🔴';
-          output += `${p.side === 'LONG' ? '📈' : '📉'} ${p.market} | $${p.size_usdc} | ${p.leverage}x | ${pnlEmoji} PnL: $${(p.unrealized_pnl || 0).toFixed(2)}\n`;
+          const pnlSign = (p.unrealized_pnl || 0) >= 0 ? '+' : '';
+          const side = p.side === 'LONG' ? '[+]' : '[-]';
+          const market = p.market || p.asset || '?';
+          output += `${side} ${market} | $${p.size_usdc} | ${p.leverage}x | PnL: ${pnlSign}$${(p.unrealized_pnl || 0).toFixed(2)}\n`;
         }
         return output.trim();
       } else {
-        // Fallback: show demo positions
-        return `📊 当前持仓:\n─${'─'.repeat(39)}\n📈 BTC-PERP | $1000 | 5x | 🟢 PnL: $45.20\n📉 ETH-PERP | $500 | 3x | 🔴 PnL: -$12.30`;
+        return '[X] 获取持仓失败';
       }
     } catch {
-      return '❌ 获取持仓失败 - 请检查网络连接';
+      return '[X] 获取持仓失败 - 请检查网络连接';
     }
   };
 
-  // Close position
+  // Close position — 使用已登录的 agent_id
   const closePosition = async (intent: ParsedIntent): Promise<string> => {
+    if (!agentId || !apiKey) {
+      return '[X] 请先登录! 前往 /join 注册 Agent';
+    }
     if (!intent.market) {
-      return '❌ 请指定要平仓的市场 (BTC, ETH, SOL)';
+      return '[X] 请指定要平仓的市场 (BTC, ETH, SOL)';
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/positions/intent_terminal/${intent.market}/close`, {
+      const response = await fetch(`${API_BASE_URL}/positions/${agentId}/${intent.market}/close`, {
         method: 'POST',
+        headers: { 'X-API-Key': apiKey },
       });
 
       if (response.ok) {
-        return `✅ 已平掉 ${intent.market} 仓位`;
+        const data = await response.json();
+        const pnl = data.realized_pnl ?? data.pnl ?? 0;
+        const pnlSign = pnl >= 0 ? '+' : '';
+        return `[OK] 已平掉 ${intent.market} 仓位 | PnL: ${pnlSign}$${pnl.toFixed(2)}`;
       } else {
-        // Demo response
-        return `✅ 已平掉 ${intent.market} 仓位 (模拟)`;
+        const error = await response.text();
+        return `[X] 平仓失败: ${error}`;
       }
     } catch {
-      return `✅ 已平掉 ${intent.market} 仓位 (模拟)`;
+      return '[X] 平仓失败 - 请检查网络连接';
     }
   };
 
   // Set alert
   const setAlert = async (intent: ParsedIntent): Promise<string> => {
     if (!intent.market) {
-      return '❌ 请指定要监控的市场 (BTC, ETH, SOL)';
+      return '[X] 请指定要监控的市场 (BTC, ETH, SOL)';
     }
     if (!intent.price) {
-      return '❌ 请指定触发价格，例如 "跌破 90"';
+      return '[X] 请指定触发价格，例如 "跌破 90"';
     }
 
     // In a real app, this would call an alert service
     return `
-🔔 价格提醒已设置!
-📊 市场: ${intent.market}
-💰 触发价格: $${intent.price}
-⏰ 触发后将自动通知您
+[!] 价格提醒已设置!
+> 市场: ${intent.market}
+> 触发价格: $${intent.price}
+> 触发后将自动通知您
     `.trim();
   };
 
@@ -276,7 +313,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
       case 'long':
       case 'short':
         output = await executeTrade(intent);
-        type = output.startsWith('✅') ? 'success' : 'error';
+        type = output.startsWith('[OK]') ? 'success' : 'error';
         break;
       case 'positions':
         output = await getPositions();
@@ -284,14 +321,14 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
         break;
       case 'close':
         output = await closePosition(intent);
-        type = output.startsWith('✅') ? 'success' : 'error';
+        type = output.startsWith('[OK]') ? 'success' : 'error';
         break;
       case 'alert':
         output = await setAlert(intent);
-        type = output.startsWith('🔔') ? 'success' : 'error';
+        type = output.startsWith('[!]') ? 'success' : 'error';
         break;
       default:
-        output = `❓ 无法理解命令: "${cmd}"\n💡 输入 "help" 查看支持的命令`;
+        output = `[?] 无法理解命令: "${cmd}"\n> 输入 "help" 查看支持的命令`;
         type = 'error';
     }
 
@@ -363,7 +400,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
             <div key={i} className="mb-2">
               {item.command && (
                 <div className="flex items-center gap-2 text-cyan-500">
-                  <span className="text-green-400">❯</span>
+                  <span className="text-green-400">$</span>
                   <span>{item.command}</span>
                 </div>
               )}
@@ -385,7 +422,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
 
           {/* Input Line */}
           <div className="flex items-center gap-2">
-            <span className="text-green-400">❯</span>
+            <span className="text-green-400">$</span>
             <input
               ref={inputRef}
               type="text"
@@ -398,7 +435,7 @@ ${emoji} ${intent.action.toUpperCase()} ${intent.market}
               autoFocus
             />
             {isProcessing && (
-              <span className="text-yellow-400 animate-pulse">⏳</span>
+              <span className="text-yellow-400 animate-pulse">...</span>
             )}
           </div>
         </div>

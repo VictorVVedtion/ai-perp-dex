@@ -3,6 +3,7 @@ import { API_BASE_URL } from '@/lib/config';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { getMarkets, Market } from '@/lib/api';
+import { formatPrice, formatUsd } from '@/lib/utils';
 
 // TradingView symbol mapping
 const TV_SYMBOLS: Record<string, string> = {
@@ -25,13 +26,13 @@ export default function TradePage() {
   const [leverage, setLeverage] = useState(5);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [balance] = useState(10000);
+  const [balance, setBalance] = useState(0);
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
   const [apiKey, setApiKey] = useState('');
   const [agentId, setAgentId] = useState('');
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
-  // 从 localStorage 读取认证信息（与 portfolio/signals 页面一致）
+  // 从 localStorage 读取认证信息 + 获取真实余额
   useEffect(() => {
     const saved = localStorage.getItem('perp_dex_auth');
     if (saved) {
@@ -39,6 +40,17 @@ export default function TradePage() {
         const { apiKey: key, agentId: id } = JSON.parse(saved);
         setApiKey(key);
         setAgentId(id);
+        // 获取真实余额
+        if (id && key) {
+          fetch(`${API_BASE_URL}/balance/${id}`, {
+            headers: { 'X-API-Key': key },
+          })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (data) setBalance(data.available ?? data.balance ?? 0);
+            })
+            .catch(() => {});
+        }
       } catch {}
     }
   }, []);
@@ -157,7 +169,7 @@ export default function TradePage() {
       });
 
       if (response.ok) {
-        setResult({ success: true, message: `Order submitted successfully! 🦞` });
+        setResult({ success: true, message: `Order submitted successfully! ✓` });
         setSizeUsdc('');
       } else {
         const error = await response.text();
@@ -190,7 +202,7 @@ export default function TradePage() {
               <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">PERP</span>
             </div>
             <div className="flex items-center gap-3 text-sm font-mono mt-0.5">
-              <span className="text-white">${selectedMarket.price.toLocaleString()}</span>
+              <span className="text-white">{formatPrice(selectedMarket.price)}</span>
               <span className={(selectedMarket.change24h ?? 0) >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}>
                 {(selectedMarket.change24h ?? 0) > 0 ? '+' : ''}{(selectedMarket.change24h ?? 0).toFixed(2)}%
               </span>
@@ -201,11 +213,11 @@ export default function TradePage() {
         <div className="flex gap-8 text-right hidden sm:flex">
           <div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">24h Volume</div>
-            <div className="text-sm font-mono text-zinc-300">{formatVolume(selectedMarket.volume24h)}</div>
+            <div className="text-sm font-mono text-zinc-300">{formatUsd(selectedMarket.volume24h)}</div>
           </div>
           <div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Open Interest</div>
-            <div className="text-sm font-mono text-zinc-300">{formatVolume(selectedMarket.openInterest)}</div>
+            <div className="text-sm font-mono text-zinc-300">{formatUsd(selectedMarket.openInterest)}</div>
           </div>
           <div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Funding / 1h</div>
@@ -353,7 +365,7 @@ export default function TradePage() {
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-500">Liquidation Price</span>
                   <span className={`font-mono ${side === 'LONG' ? 'text-[#FF6B35]' : 'text-[#00D4AA]'}`}>
-                    ${liquidationPrice > 0 ? liquidationPrice.toFixed(2) : '-'}
+                    {liquidationPrice > 0 ? formatPrice(liquidationPrice) : '-'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
