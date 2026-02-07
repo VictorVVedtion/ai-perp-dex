@@ -1754,14 +1754,14 @@ async def get_inbox(agent_id: str, limit: int = 50):
 # Agent Communication API (AI Native)
 # ==========================================
 
-class SendMessageRequest(BaseModel):
+class AgentMessageRequest(BaseModel):
     to_agent: str
     message: str
 
 @app.post("/agents/{agent_id}/message")
 async def send_message(
     agent_id: str,
-    req: SendMessageRequest,
+    req: AgentMessageRequest,
     auth: AgentAuth = Depends(verify_agent)
 ):
     """Agent 间发送消息"""
