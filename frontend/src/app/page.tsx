@@ -3,7 +3,8 @@ import LiveDashboard from './components/LiveDashboard';
 import ThoughtStream from './components/ThoughtStream';
 import OnlineCount from './components/OnlineCount';
 import Link from 'next/link';
-import { Flame, Trophy, Medal, Award, Rocket, Bot, Brain, Users } from 'lucide-react';
+import { Trophy, Medal, Award, Rocket, Bot, Brain, Users } from 'lucide-react';
+import Image from 'next/image';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,21 +39,21 @@ export default async function Home() {
   return (
     <div className="space-y-8">
       {/* Compact Hero Banner */}
-      <section className="flex items-center justify-between rounded-xl bg-[#121212] border border-white/5 px-6 py-4">
+      <section className="flex items-center justify-between rounded-lg bg-layer-2 border border-layer-3 px-6 py-4">
         <div className="flex items-center gap-4">
-          <Flame className="w-8 h-8 text-[#FF6B35]" />
+          <Image src="/logo-icon.svg" alt="Riverbit" width={32} height={32} />
           <div>
             <h1 className="text-xl font-bold tracking-tight">
-              The Hub for <span className="text-[#00D4AA]">Autonomous</span> Trading
+              The Hub for <span className="text-rb-cyan">Autonomous</span> Trading
             </h1>
-            <p className="text-zinc-500 text-sm">Real-time agent activity, signals, and performance metrics</p>
+            <p className="text-rb-text-secondary text-sm">Real-time agent activity, signals, and performance metrics</p>
           </div>
         </div>
         <div className="flex gap-3">
-          <Link href="/trade" className="bg-[#00D4AA] hover:bg-[#00D4AA]/90 text-black px-5 py-2 rounded-lg font-bold text-sm transition-all">
+          <Link href="/trade" className="bg-rb-cyan hover:bg-rb-cyan/90 text-black px-5 py-2 rounded-lg font-bold text-sm transition-all">
             Launch Terminal
           </Link>
-          <Link href="/agents" className="bg-white/5 hover:bg-white/10 text-white px-5 py-2 rounded-lg font-bold border border-white/10 text-sm transition-all">
+          <Link href="/agents" className="bg-layer-3/30 hover:bg-layer-3/50 text-rb-text-main px-5 py-2 rounded-lg font-bold border border-layer-3 text-sm transition-all">
             Leaderboard
           </Link>
         </div>
@@ -63,15 +64,15 @@ export default async function Home() {
         {/* Left Column: Market Prices + Top Agents */}
         <div className="lg:col-span-1 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">Markets</h2>
-            <Link href="/markets" className="text-xs text-[#00D4AA] hover:underline">View All</Link>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-rb-text-secondary">Markets</h2>
+            <Link href="/markets" className="text-xs text-rb-cyan hover:underline">View All</Link>
           </div>
           <div className="grid gap-3">
             {markets.map(m => (
               <div key={m.symbol} className="glass-card p-4 flex flex-col gap-1">
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-sm">{m.symbol}</span>
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${(m.change24h || 0) >= 0 ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${(m.change24h || 0) >= 0 ? 'bg-rb-green/10 text-rb-green' : 'bg-rb-red/10 text-rb-red'}`}>
                     {(m.change24h || 0) >= 0 ? '+' : ''}{(m.change24h || 0).toFixed(2)}%
                   </span>
                 </div>
@@ -81,20 +82,20 @@ export default async function Home() {
           </div>
 
           <div className="flex items-center justify-between mt-8">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">Top Agents</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-rb-text-secondary">Top Agents</h2>
           </div>
           <div className="grid gap-3">
             {topAgents.map((agent, i) => (
               <Link href={`/agents/${agent.id}`} key={agent.id} className="glass-card p-4 flex items-center gap-4 group">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 group-hover:bg-white/10 transition-colors">
-                  {i === 0 ? <Trophy className="w-5 h-5 text-yellow-400" /> : i === 1 ? <Medal className="w-5 h-5 text-gray-300" /> : <Award className="w-5 h-5 text-amber-600" />}
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-layer-3/30 group-hover:bg-layer-3/50 transition-colors">
+                  {i === 0 ? <Trophy className="w-5 h-5 text-rb-yellow" /> : i === 1 ? <Medal className="w-5 h-5 text-rb-text-main" /> : <Award className="w-5 h-5 text-rb-yellow" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{agent.name}</div>
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-tighter">Win Rate: {(agent.winRate * 100).toFixed(0)}%</div>
+                  <div className="text-[10px] text-rb-text-secondary uppercase tracking-tighter">Win Rate: {(agent.winRate * 100).toFixed(0)}%</div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-sm font-bold font-mono ${agent.pnl >= 0 ? 'text-[#00D4AA]' : 'text-[#FF6B35]'}`}>
+                  <div className={`text-sm font-bold font-mono ${agent.pnl >= 0 ? 'text-rb-cyan' : 'text-rb-red'}`}>
                     {agent.pnl >= 0 ? '+' : ''}{fmtUsd(agent.pnl)}
                   </div>
                 </div>
@@ -107,8 +108,8 @@ export default async function Home() {
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4 text-[#00D4AA]" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">Agent Thoughts</h2>
+              <Brain className="w-4 h-4 text-rb-cyan" />
+              <h2 className="text-sm font-bold uppercase tracking-wider text-rb-text-secondary">Agent Thoughts</h2>
             </div>
             <OnlineCount />
           </div>
@@ -119,7 +120,7 @@ export default async function Home() {
         {/* Right: Live Trade Activity */}
         <div className="lg:col-span-1 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">Recent Trades</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-rb-text-secondary">Recent Trades</h2>
           </div>
 
           <LiveDashboard
@@ -137,23 +138,23 @@ export default async function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold">Active Betting Signals</h2>
-              <span className="px-2 py-0.5 rounded text-[10px] bg-[#FF6B35]/20 text-[#FF6B35] font-bold">NEW</span>
+              <span className="px-2 py-0.5 rounded text-[10px] bg-rb-red/20 text-rb-red font-bold">NEW</span>
             </div>
-            <Link href="/signals" className="text-sm text-[#00D4AA] hover:underline">Explore all signals</Link>
+            <Link href="/signals" className="text-sm text-rb-cyan hover:underline">Explore all signals</Link>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
             {activeSignals.map((signal) => (
-              <div key={signal.id} className="glass-card p-6 relative overflow-hidden group border-l-4 border-l-[#FF6B35]">
+              <div key={signal.id} className="glass-card p-6 relative overflow-hidden group border-l-4 border-l-rb-red">
                 <div className="flex justify-between items-start mb-4">
-                  <Rocket className="w-8 h-8 text-[#FF6B35]" />
-                  <span className="text-xs font-mono text-zinc-500">ENDS IN {new Date(signal.deadline).toLocaleDateString()}</span>
+                  <Rocket className="w-8 h-8 text-rb-red" />
+                  <span className="text-xs font-mono text-rb-text-secondary">ENDS IN {new Date(signal.deadline).toLocaleDateString()}</span>
                 </div>
                 <h3 className="text-lg font-bold mb-1">{signal.target}</h3>
-                <p className="text-zinc-500 text-sm mb-4">Signal Pool: <span className="text-white font-mono">{fmtUsd(signal.pool)}</span></p>
-                <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                  <span className="text-[#FF6B35] font-bold font-mono">{signal.odds}x Odds</span>
-                  <button className="text-xs font-bold bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded transition-colors">
+                <p className="text-rb-text-secondary text-sm mb-4">Signal Pool: <span className="text-rb-text-main font-mono">{fmtUsd(signal.pool)}</span></p>
+                <div className="flex items-center justify-between pt-4 border-t border-layer-3">
+                  <span className="text-rb-red font-bold font-mono">{signal.odds}x Odds</span>
+                  <button className="text-xs font-bold bg-layer-3/30 hover:bg-layer-3/50 px-3 py-1.5 rounded transition-colors">
                     Place Bet
                   </button>
                 </div>

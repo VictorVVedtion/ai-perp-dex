@@ -2,17 +2,17 @@
 import { API_BASE_URL } from '@/lib/config';
 
 import { useState } from 'react';
-import { 
-  Flame, 
-  Zap, 
-  Globe, 
-  Package, 
-  CheckCircle, 
-  Key, 
+import {
+  Zap,
+  Globe,
+  Package,
+  CheckCircle,
+  Key,
   Rocket,
   AlertTriangle,
   ArrowLeft
 } from 'lucide-react';
+import Image from 'next/image';
 
 export default function JoinPage() {
   const [step, setStep] = useState<'intro' | 'register' | 'success'>('intro');
@@ -30,7 +30,7 @@ export default function JoinPage() {
 
   const handleRegister = async () => {
     if (!formData.name || !formData.wallet) return;
-    
+
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/agents/register`, {
@@ -42,18 +42,18 @@ export default function JoinPage() {
           bio: formData.bio || undefined,
         }),
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         const agentId = data.agent.agent_id;
         const apiKey = data.api_key;
-        
+
         // Auto-save credentials to localStorage for Portfolio page
         localStorage.setItem('perp_dex_auth', JSON.stringify({
           apiKey,
           agentId,
         }));
-        
+
         setResult({
           agentId,
           apiKey,
@@ -73,127 +73,124 @@ export default function JoinPage() {
       {step === 'intro' && (
         <div className="max-w-2xl text-center">
           <div className="flex justify-center mb-6">
-            <Flame className="w-16 h-16 text-[#FF6B35]" />
+            <Image src="/logo-icon.svg" alt="Riverbit" width={64} height={64} />
           </div>
           <h1 className="text-4xl font-bold mb-4">
-            Join <span className="text-[#00D4AA]">AI Perp DEX</span>
+            Join <span className="text-rb-cyan">Riverbit</span>
           </h1>
-          <p className="text-zinc-400 text-lg mb-8">
+          <p className="text-rb-text-secondary text-lg mb-8">
             The first perpetual trading exchange built for autonomous AI agents.
             Register your agent and start trading in minutes.
           </p>
-          
+
           <div className="grid grid-cols-2 gap-6 mb-10">
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 text-left">
-              <Zap className="w-6 h-6 text-[#00D4AA] mb-3" />
-              <h3 className="font-bold text-white mb-2">CLI Installation</h3>
-              <p className="text-zinc-400 text-sm mb-4">
-                For programmatic trading and automation
+            <div className="bg-layer-2 border border-layer-3 rounded-lg p-6 text-left">
+              <Zap className="w-6 h-6 text-rb-cyan mb-3" />
+              <h3 className="font-bold mb-2">API Integration</h3>
+              <p className="text-rb-text-secondary text-sm mb-4">
+                通过 REST API 接入，支持任意语言
               </p>
-              <div className="bg-[#050505] rounded-lg p-3 font-mono text-sm">
-                <span className="text-zinc-500">$</span>{' '}
-                <span className="text-[#00D4AA]">npx perp-dex-cli register</span>
+              <div className="bg-layer-0 rounded-lg p-3 font-mono text-sm">
+                <span className="text-rb-text-secondary">POST</span>{' '}
+                <span className="text-rb-cyan">/agents/register</span>
               </div>
             </div>
-            
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 text-left">
-              <Globe className="w-6 h-6 text-[#00D4AA] mb-3" />
-              <h3 className="font-bold text-white mb-2">Web Registration</h3>
-              <p className="text-zinc-400 text-sm mb-4">
-                Quick setup through the browser
+
+            <div className="bg-layer-2 border border-layer-3 rounded-lg p-6 text-left">
+              <Globe className="w-6 h-6 text-rb-cyan mb-3" />
+              <h3 className="font-bold mb-2">Web Registration</h3>
+              <p className="text-rb-text-secondary text-sm mb-4">
+                浏览器一键注册，无需安装
               </p>
               <button
                 onClick={() => setStep('register')}
-                className="w-full bg-[#FF6B35] hover:bg-[#FF8555] text-white px-4 py-2 rounded-lg font-bold transition-all"
+                className="w-full bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-4 py-2 rounded-lg font-bold transition-all"
               >
                 Register Now →
               </button>
             </div>
           </div>
-          
-          <div className="text-left bg-zinc-900/30 border border-zinc-800 rounded-xl p-6">
+
+          <div className="text-left bg-layer-1 border border-layer-3 rounded-lg p-6">
             <div className="flex items-center gap-2 mb-4">
-              <Package className="w-5 h-5 text-[#00D4AA]" />
-              <h3 className="font-bold text-white">Full CLI Setup</h3>
+              <Package className="w-5 h-5 text-rb-cyan" />
+              <h3 className="font-bold">API Quick Start</h3>
             </div>
-            <div className="space-y-3 font-mono text-sm">
-              <div className="flex items-start gap-3">
-                <span className="text-zinc-500 w-4">1.</span>
-                <div>
-                  <span className="text-zinc-400">Install the CLI:</span>
-                  <div className="text-[#00D4AA] mt-1">npm install -g perp-dex-cli</div>
-                </div>
+            <div className="space-y-4 font-mono text-sm">
+              <div>
+                <span className="text-rb-text-secondary">1. 注册 Agent:</span>
+                <pre className="text-rb-cyan mt-1 bg-layer-0 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_BASE_URL}/agents/register \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"MyBot","wallet_address":"0x..."}'`}</pre>
               </div>
-              <div className="flex items-start gap-3">
-                <span className="text-zinc-500 w-4">2.</span>
-                <div>
-                  <span className="text-zinc-400">Register your agent:</span>
-                  <div className="text-[#00D4AA] mt-1">perp-dex register</div>
-                </div>
+              <div>
+                <span className="text-rb-text-secondary">2. 充值 USDC:</span>
+                <pre className="text-rb-cyan mt-1 bg-layer-0 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_BASE_URL}/deposit \\
+  -H "X-API-Key: YOUR_KEY" \\
+  -d '{"agent_id":"...","amount":1000}'`}</pre>
               </div>
-              <div className="flex items-start gap-3">
-                <span className="text-zinc-500 w-4">3.</span>
-                <div>
-                  <span className="text-zinc-400">Start trading:</span>
-                  <div className="text-[#00D4AA] mt-1">perp-dex long BTC 100 --leverage 5</div>
-                </div>
+              <div>
+                <span className="text-rb-text-secondary">3. 开仓交易:</span>
+                <pre className="text-rb-cyan mt-1 bg-layer-0 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_BASE_URL}/intents \\
+  -H "X-API-Key: YOUR_KEY" \\
+  -d '{"agent_id":"...","intent_type":"long","asset":"BTC-PERP","size_usdc":100,"leverage":5}'`}</pre>
               </div>
             </div>
           </div>
         </div>
       )}
-      
+
       {step === 'register' && (
         <div className="max-w-md w-full">
           <button
             onClick={() => setStep('intro')}
-            className="text-zinc-400 hover:text-white mb-6 flex items-center gap-2"
+            className="text-rb-text-secondary hover:text-rb-text-main mb-6 flex items-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" /> Back
           </button>
-          
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8">
+
+          <div className="bg-layer-2 border border-layer-3 rounded-lg p-8">
             <h2 className="text-2xl font-bold mb-6">Register Your Agent</h2>
-            
+
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Agent Name *</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Agent Name *</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="MyTradingBot"
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#00D4AA]"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-3 text-rb-text-main placeholder:text-rb-text-placeholder focus:outline-none focus:border-rb-cyan"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Wallet Address *</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Wallet Address *</label>
                 <input
                   type="text"
                   value={formData.wallet}
                   onChange={(e) => setFormData({ ...formData, wallet: e.target.value })}
                   placeholder="0x..."
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-3 text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-[#00D4AA]"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-3 text-rb-text-main font-mono placeholder:text-rb-text-placeholder focus:outline-none focus:border-rb-cyan"
                 />
-                <p className="text-xs text-zinc-500 mt-1">For receiving settlements (can be changed later)</p>
+                <p className="text-xs text-rb-text-secondary mt-1">For receiving settlements (can be changed later)</p>
               </div>
-              
+
               <div>
-                <label className="block text-sm text-zinc-400 mb-2">Bio (optional)</label>
+                <label className="block text-sm text-rb-text-secondary mb-2">Bio (optional)</label>
                 <textarea
                   value={formData.bio}
                   onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                   placeholder="Describe your agent's strategy..."
                   rows={3}
-                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#00D4AA] resize-none"
+                  className="w-full bg-layer-0 border border-layer-3 rounded-lg px-4 py-3 text-rb-text-main placeholder:text-rb-text-placeholder focus:outline-none focus:border-rb-cyan resize-none"
                 />
               </div>
-              
+
               <button
                 onClick={handleRegister}
                 disabled={loading || !formData.name || !formData.wallet}
-                className="w-full bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-4 py-3 rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+                className="w-full bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-4 py-3 rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-4"
               >
                 {loading ? 'Registering...' : 'Register Agent'}
               </button>
@@ -201,74 +198,74 @@ export default function JoinPage() {
           </div>
         </div>
       )}
-      
+
       {step === 'success' && result && (
         <div className="max-w-lg w-full text-center">
           <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 rounded-full bg-[#00D4AA]/20 flex items-center justify-center">
-              <CheckCircle className="w-10 h-10 text-[#00D4AA]" />
+            <div className="w-16 h-16 rounded-full bg-rb-cyan/20 flex items-center justify-center">
+              <CheckCircle className="w-10 h-10 text-rb-cyan" />
             </div>
           </div>
           <h1 className="text-3xl font-bold mb-2">Welcome, {result.name}!</h1>
-          <p className="text-zinc-400 mb-8">Your agent has been registered successfully.</p>
-          
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 text-left mb-6">
+          <p className="text-rb-text-secondary mb-8">Your agent has been registered successfully.</p>
+
+          <div className="bg-layer-2 border border-layer-3 rounded-lg p-6 text-left mb-6">
             <div className="flex items-center gap-2 mb-4">
-              <Key className="w-5 h-5 text-[#00D4AA]" />
-              <h3 className="font-bold text-white">Your Credentials</h3>
+              <Key className="w-5 h-5 text-rb-cyan" />
+              <h3 className="font-bold">Your Credentials</h3>
             </div>
-            
+
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Agent ID</label>
-                <div className="font-mono text-white bg-[#050505] rounded-lg px-4 py-2">
+                <label className="block text-xs text-rb-text-secondary uppercase tracking-wider mb-1">Agent ID</label>
+                <div className="font-mono bg-layer-0 rounded-lg px-4 py-2">
                   {result.agentId}
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-1">API Key</label>
-                <div className="font-mono text-[#FF6B35] bg-[#050505] rounded-lg px-4 py-2 break-all">
+                <label className="block text-xs text-rb-text-secondary uppercase tracking-wider mb-1">API Key</label>
+                <div className="font-mono text-rb-red bg-layer-0 rounded-lg px-4 py-2 break-all">
                   {result.apiKey}
                 </div>
-                <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1">
+                <p className="text-xs text-rb-text-secondary mt-1 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" /> Save this key! It won't be shown again.
                 </p>
               </div>
             </div>
           </div>
-          
-          <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-6 text-left mb-6">
+
+          <div className="bg-layer-1 border border-layer-3 rounded-lg p-6 text-left mb-6">
             <div className="flex items-center gap-2 mb-3">
-              <Rocket className="w-5 h-5 text-[#00D4AA]" />
-              <h3 className="font-bold text-white">Next Steps</h3>
+              <Rocket className="w-5 h-5 text-rb-cyan" />
+              <h3 className="font-bold">Next Steps</h3>
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
-                <span className="text-[#00D4AA]">1.</span>
-                <span className="text-zinc-400">Deposit funds to start trading</span>
+                <span className="text-rb-cyan">1.</span>
+                <span className="text-rb-text-secondary">Deposit funds to start trading</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[#00D4AA]">2.</span>
-                <span className="text-zinc-400">Use the API or CLI to place trades</span>
+                <span className="text-rb-cyan">2.</span>
+                <span className="text-rb-text-secondary">Use the API or CLI to place trades</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[#00D4AA]">3.</span>
-                <span className="text-zinc-400">Monitor your positions on the Dashboard</span>
+                <span className="text-rb-cyan">3.</span>
+                <span className="text-rb-text-secondary">Monitor your positions on the Dashboard</span>
               </div>
             </div>
           </div>
-          
+
           <div className="flex gap-4">
             <a
               href="/trade"
-              className="flex-1 bg-[#00D4AA] hover:bg-[#00F0C0] text-[#050505] px-4 py-3 rounded-lg font-bold transition-all text-center"
+              className="flex-1 bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-4 py-3 rounded-lg font-bold transition-all text-center"
             >
               Start Trading
             </a>
             <a
               href="/"
-              className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg font-bold transition-all text-center"
+              className="flex-1 bg-layer-4 hover:bg-layer-4/80 text-rb-text-main px-4 py-3 rounded-lg font-bold transition-all text-center"
             >
               Go to Dashboard
             </a>

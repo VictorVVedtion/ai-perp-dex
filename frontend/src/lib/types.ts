@@ -1,5 +1,5 @@
 /**
- * AI Perp DEX - API Response Types
+ * Riverbit - API Response Types
  * 类型安全的 API 响应定义
  */
 

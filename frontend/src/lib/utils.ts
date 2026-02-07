@@ -1,5 +1,5 @@
 /**
- * Price & number formatting utilities for AI Perp DEX frontend.
+ * Price & number formatting utilities for Riverbit frontend.
  *
  * Handles the full range: BTC ($64,325.50) to PEPE ($0.0000035).
  */

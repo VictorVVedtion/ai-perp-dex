@@ -1,5 +1,5 @@
 /**
- * AI Perp DEX Frontend Configuration
+ * Riverbit Frontend Configuration
  * All environment-dependent values should be here
  */
 

@@ -21,7 +21,7 @@ interface ParsedIntent {
 
 const HELP_TEXT = `
 ╔══════════════════════════════════════════════════════════════╗
-║                    AI PERP DEX TERMINAL                      ║
+║                    RIVERBIT TERMINAL                           ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  支持的命令:                                                  ║
 ║                                                               ║
@@ -105,10 +105,10 @@ function TypewriterLine({ text, type, onComplete }: TypewriterLineProps) {
   }, [isComplete, onComplete]);
 
   const colorClass = {
-    success: 'text-green-400',
-    error: 'text-red-400',
-    info: 'text-cyan-400',
-    pending: 'text-yellow-400',
+    success: 'text-rb-green',
+    error: 'text-rb-red',
+    info: 'text-rb-cyan',
+    pending: 'text-rb-yellow',
   }[type];
 
   return (
@@ -178,8 +178,8 @@ export default function IntentTerminal() {
         },
         body: JSON.stringify({
           agent_id: agentId,
-          action: intent.action,
-          market: intent.market,
+          intent_type: intent.action,
+          asset: intent.market,
           size_usdc: intent.size,
           leverage: intent.leverage || 5,
         }),
@@ -371,16 +371,16 @@ ${arrow} ${intent.market}
   return (
     <div className="w-full max-w-3xl mx-auto">
       {/* Terminal Window */}
-      <div className="rounded-xl overflow-hidden border border-zinc-800 shadow-2xl shadow-cyan-500/10">
+      <div className="rounded-lg overflow-hidden border border-layer-3 shadow-2xl shadow-cyan-500/10">
         {/* Title Bar */}
-        <div className="bg-zinc-900 px-4 py-3 flex items-center gap-2 border-b border-zinc-800">
+        <div className="bg-layer-1 px-4 py-3 flex items-center gap-2 border-b border-layer-3">
           <div className="flex gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            <div className="w-3 h-3 rounded-full bg-rb-red"></div>
+            <div className="w-3 h-3 rounded-full bg-rb-yellow"></div>
+            <div className="w-3 h-3 rounded-full bg-rb-green"></div>
           </div>
-          <div className="flex-1 text-center text-sm text-zinc-500 font-mono">
-            intent-terminal — ai-perp-dex
+          <div className="flex-1 text-center text-sm text-rb-text-secondary font-mono">
+            intent-terminal — riverbit
           </div>
           <div className="w-16"></div>
         </div>
@@ -389,7 +389,7 @@ ${arrow} ${intent.market}
         <div
           ref={terminalRef}
           onClick={focusInput}
-          className="bg-zinc-950 p-4 font-mono text-sm min-h-[400px] max-h-[500px] overflow-y-auto cursor-text"
+          className="bg-layer-0 p-4 font-mono text-sm min-h-[400px] max-h-[500px] overflow-y-auto cursor-text"
           style={{
             fontFamily: '"SF Mono", "Fira Code", "Monaco", "Consolas", monospace',
             textShadow: '0 0 10px rgba(34, 211, 238, 0.3)'
@@ -399,16 +399,16 @@ ${arrow} ${intent.market}
           {history.map((item, i) => (
             <div key={i} className="mb-2">
               {item.command && (
-                <div className="flex items-center gap-2 text-cyan-500">
-                  <span className="text-green-400">$</span>
+                <div className="flex items-center gap-2 text-rb-cyan">
+                  <span className="text-rb-green">$</span>
                   <span>{item.command}</span>
                 </div>
               )}
               {item.output && (
-                <pre className={`whitespace-pre-wrap mt-1 ${item.type === 'success' ? 'text-green-400' :
-                    item.type === 'error' ? 'text-red-400' :
-                      item.type === 'pending' ? 'text-yellow-400' :
-                        'text-cyan-400'
+                <pre className={`whitespace-pre-wrap mt-1 ${item.type === 'success' ? 'text-rb-green' :
+                    item.type === 'error' ? 'text-rb-red' :
+                      item.type === 'pending' ? 'text-rb-yellow' :
+                        'text-rb-cyan'
                   }`}>
                   {i === history.length - 1 && !isProcessing ? (
                     <TypewriterLine text={item.output} type={item.type} />
@@ -422,7 +422,7 @@ ${arrow} ${intent.market}
 
           {/* Input Line */}
           <div className="flex items-center gap-2">
-            <span className="text-green-400">$</span>
+            <span className="text-rb-green">$</span>
             <input
               ref={inputRef}
               type="text"
@@ -431,19 +431,19 @@ ${arrow} ${intent.market}
               onKeyDown={handleKeyDown}
               disabled={isProcessing}
               placeholder={isProcessing ? '处理中...' : '输入命令... (试试 "做多 ETH $100 5x")'}
-              className="flex-1 bg-transparent text-cyan-400 placeholder:text-zinc-600 outline-none caret-cyan-400"
+              className="flex-1 bg-transparent text-rb-cyan placeholder:text-rb-text-placeholder outline-none caret-rb-cyan"
               autoFocus
             />
             {isProcessing && (
-              <span className="text-yellow-400 animate-pulse">...</span>
+              <span className="text-rb-yellow animate-pulse">...</span>
             )}
           </div>
         </div>
 
         {/* Status Bar */}
-        <div className="bg-zinc-900 px-4 py-2 flex justify-between items-center text-xs text-zinc-500 border-t border-zinc-800">
+        <div className="bg-layer-1 px-4 py-2 flex justify-between items-center text-xs text-rb-text-secondary border-t border-layer-3">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            <span className="w-2 h-2 rounded-full bg-rb-green animate-pulse"></span>
             <span>Connected</span>
           </div>
           <div className="flex gap-4">
@@ -467,7 +467,7 @@ ${arrow} ${intent.market}
               setInput(cmd);
               inputRef.current?.focus();
             }}
-            className="px-3 py-1.5 text-xs font-mono rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-cyan-400 hover:bg-zinc-700/50 hover:border-cyan-500/30 transition-all"
+            className="px-3 py-1.5 text-xs font-mono rounded-lg bg-layer-4/50 border border-layer-4/50 text-rb-cyan hover:bg-layer-4/80 hover:border-rb-cyan/30 transition-all"
           >
             {cmd}
           </button>
