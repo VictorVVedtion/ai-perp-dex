@@ -43,6 +43,13 @@ class AgentConfig:
     markets: List[str] = field(default_factory=lambda: ["BTC-PERP", "ETH-PERP"])
     strategy: str = "momentum"          # 策略类型
     auto_broadcast: bool = True         # 自动广播思考
+    # --- 高级参数 ---
+    take_profit: Optional[float] = None         # 止盈比例 (0.05 = +5%)
+    stop_loss: Optional[float] = None           # 止损比例 (-0.03 = -3%, 必须为负)
+    default_leverage: int = 5                    # 默认杠杆 (1-20)
+    signal_sources: List[str] = field(default_factory=list)  # 信号来源 agent_id 白名单
+    strategy_params: Dict[str, Any] = field(default_factory=dict)  # 策略自定义参数
+    max_open_positions: int = 3                  # 最大同时持仓 (1-10)
 
 
 @dataclass
@@ -320,9 +327,12 @@ class AgentRuntime:
                     logger.warning(f"Agent {agent_id} brain missing, stopping heartbeat")
                     break
 
+                # --- TP/SL 自动平仓检查 ---
+                await self._check_tp_sl(agent_id, config)
+
                 # 更新状态为思考中
                 self.states[agent_id] = AgentState.THINKING
-                
+
                 # 分析所有关注的市场
                 analyses = []
                 for market in config.markets:
@@ -384,11 +394,74 @@ class AgentRuntime:
         
         return " | ".join(parts)
     
+    async def _check_tp_sl(self, agent_id: str, config: AgentConfig):
+        """检查所有持仓的止盈/止损条件，满足则自动平仓"""
+        if config.take_profit is None and config.stop_loss is None:
+            return
+
+        from services.position_manager import position_manager
+
+        positions = position_manager.get_positions(agent_id, only_open=True)
+        for pos in positions:
+            asset = pos.asset.replace("-PERP", "")
+            current_price = price_feed.get_cached_price(asset)
+            if current_price <= 0:
+                latest = await price_feed.get_price(asset)
+                current_price = latest.price if latest else 0
+            if current_price <= 0:
+                continue
+
+            pos.update_pnl(current_price)
+            pnl_pct = pos.unrealized_pnl / pos.margin if pos.margin > 0 else 0
+
+            close_reason = None
+            if config.take_profit is not None and pnl_pct >= config.take_profit:
+                close_reason = "take_profit"
+            elif config.stop_loss is not None and pnl_pct <= config.stop_loss:
+                close_reason = "stop_loss"
+
+            if close_reason:
+                try:
+                    position_manager.close_position(pos.position_id, current_price)
+                    logger.info(
+                        f"Runtime {close_reason}: {agent_id} closed {pos.position_id} "
+                        f"pnl={pnl_pct:.2%}"
+                    )
+                    if config.auto_broadcast:
+                        self._safe_save_message(
+                            sender_id=agent_id,
+                            content=(
+                                f"Auto-{close_reason.replace('_', ' ')}: {pos.asset} "
+                                f"| PnL: {pnl_pct:.2%} | Price: ${current_price:,.2f}"
+                            ),
+                            message_type="signal",
+                            metadata={
+                                "asset": pos.asset,
+                                "reason": close_reason,
+                                "pnl_pct": round(pnl_pct, 4),
+                                "position_id": pos.position_id,
+                            },
+                        )
+                except Exception as e:
+                    logger.warning(f"TP/SL close failed for {pos.position_id}: {e}")
+
     async def _execute_trade(self, agent_id: str, decision: TradeDecision):
         """执行交易决策"""
+        config = self.agents.get(agent_id)
+
+        # max_open_positions 限制
+        from services.position_manager import position_manager as _pm
+        open_count = len(_pm.get_positions(agent_id, only_open=True))
+        max_pos = config.max_open_positions if config else 3
+        if open_count >= max_pos:
+            logger.info(f"Runtime skip: {agent_id} has {open_count}/{max_pos} open positions")
+            return
+
         side = "long" if "long" in decision.action else "short"
         size_usdc = max(1.0, round(float(decision.size), 2))
-        leverage = max(1, min(10, int(2 + decision.confidence * 8)))
+        # 使用 config.default_leverage 作为基础，信心度微调
+        base_lev = config.default_leverage if config else 5
+        leverage = max(1, min(base_lev, int(2 + decision.confidence * (base_lev - 1))))
 
         # 价格优先走缓存，不命中时异步拉取
         entry_price = price_feed.get_cached_price(decision.market)

@@ -25,30 +25,141 @@ class MessageType(Enum):
     PING = "ping"
     PONG = "pong"
     ANNOUNCE = "announce"
-    
+
     # 交易
     TRADE_REQUEST = "trade_request"  # 请求交易
     TRADE_ACCEPT = "trade_accept"
     TRADE_REJECT = "trade_reject"
     TRADE_COMPLETE = "trade_complete"
-    
+
     # 信号
     SIGNAL_SHARE = "signal_share"  # 分享交易信号
     SIGNAL_ACK = "signal_ack"
-    
+
     # 策略
     STRATEGY_OFFER = "strategy_offer"  # 出售策略
     STRATEGY_BUY = "strategy_buy"
     STRATEGY_DELIVER = "strategy_deliver"
-    
+
     # 联盟
     ALLIANCE_INVITE = "alliance_invite"
     ALLIANCE_ACCEPT = "alliance_accept"
     ALLIANCE_LEAVE = "alliance_leave"
-    
+
     # 通用
     CHAT = "chat"
     ERROR = "error"
+
+    # === A2A 标准化协议 (v2) ===
+    SIGNAL_PROPOSAL = "signal_proposal"          # 结构化信号提案
+    TRADE_ACCEPTANCE = "trade_acceptance"         # 结构化交易接受
+    STRATEGY_UPDATE = "strategy_update"           # 策略状态更新
+    RISK_ALERT = "risk_alert"                     # 风险警报
+    POSITION_UPDATE = "position_update"           # 持仓变动通知
+    COORDINATION_REQUEST = "coordination_request" # 协调请求（联合建仓等）
+
+
+# === A2A 标准化消息 Schema ===
+# 为 Agent 间自动化通信定义严格的 JSON 结构
+
+A2A_SCHEMAS = {
+    "signal_proposal": {
+        "required": ["asset", "direction", "confidence", "timeframe"],
+        "optional": ["target_price", "stop_loss", "reasoning", "expires_in_seconds"],
+        "example": {
+            "asset": "BTC-PERP",
+            "direction": "long",
+            "confidence": 0.85,
+            "timeframe": "4h",
+            "target_price": 105000,
+            "stop_loss": 98000,
+            "reasoning": "Breakout above 102k resistance with volume confirmation",
+            "expires_in_seconds": 3600,
+        },
+    },
+    "trade_acceptance": {
+        "required": ["proposal_message_id", "accepted", "size_usdc"],
+        "optional": ["counter_price", "counter_size", "message"],
+        "example": {
+            "proposal_message_id": "msg_abc123",
+            "accepted": True,
+            "size_usdc": 500,
+            "counter_price": None,
+            "message": "Agreed, opening matching position",
+        },
+    },
+    "strategy_update": {
+        "required": ["strategy_name", "status"],
+        "optional": ["markets", "performance", "params", "message"],
+        "example": {
+            "strategy_name": "momentum_v2",
+            "status": "active",
+            "markets": ["BTC-PERP", "ETH-PERP"],
+            "performance": {"win_rate": 0.62, "sharpe": 1.4, "max_drawdown": -0.08},
+            "params": {"lookback": 20, "threshold": 0.5},
+        },
+    },
+    "risk_alert": {
+        "required": ["alert_type", "severity", "asset"],
+        "optional": ["details", "recommended_action", "expires_in_seconds"],
+        "example": {
+            "alert_type": "liquidation_warning",
+            "severity": "high",
+            "asset": "ETH-PERP",
+            "details": "Position approaching liquidation price at 2x leverage",
+            "recommended_action": "reduce_position",
+        },
+    },
+    "position_update": {
+        "required": ["asset", "action", "side"],
+        "optional": ["size_usdc", "entry_price", "pnl", "leverage", "position_id"],
+        "example": {
+            "asset": "SOL-PERP",
+            "action": "opened",
+            "side": "long",
+            "size_usdc": 200,
+            "entry_price": 145.5,
+            "leverage": 3,
+            "position_id": "pos_abc123",
+        },
+    },
+    "coordination_request": {
+        "required": ["request_type", "asset", "proposed_side"],
+        "optional": ["proposed_size", "proposed_leverage", "deadline_seconds", "message"],
+        "example": {
+            "request_type": "joint_position",
+            "asset": "BTC-PERP",
+            "proposed_side": "long",
+            "proposed_size": 1000,
+            "proposed_leverage": 2,
+            "deadline_seconds": 300,
+            "message": "Coordinated entry at support level",
+        },
+    },
+}
+
+
+def validate_a2a_payload(msg_type: str, payload: dict) -> tuple[bool, str]:
+    """Validate A2A message payload against its schema.
+
+    Returns (is_valid, error_message).
+    """
+    schema = A2A_SCHEMAS.get(msg_type)
+    if not schema:
+        return True, ""  # Non-schema messages pass through
+
+    # Check required fields
+    missing = [f for f in schema["required"] if f not in payload]
+    if missing:
+        return False, f"Missing required fields: {', '.join(missing)}"
+
+    # Check no unknown fields
+    all_fields = set(schema["required"]) | set(schema.get("optional", []))
+    unknown = [f for f in payload if f not in all_fields]
+    if unknown:
+        return False, f"Unknown fields: {', '.join(unknown)}"
+
+    return True, ""
 
 
 @dataclass
@@ -174,6 +285,43 @@ class AgentCommunicator:
         self.agents[agent_id] = profile
         self.inboxes[agent_id] = []
         return profile
+
+    def restore_from_store(self, agents_data: list) -> int:
+        """从 Redis store 恢复 agent profiles（服务器重启后调用）
+
+        Args:
+            agents_data: store.list_agents() 返回的 Agent dataclass 列表
+
+        Returns:
+            恢复的 agent 数量
+        """
+        restored = 0
+        for agent in agents_data:
+            if agent.agent_id in self.agents:
+                continue  # 已在内存中，跳过
+
+            # 判断 online 状态: status == "active" 视为在线
+            status_val = getattr(agent, 'status', None)
+            online = False
+            if status_val is not None:
+                # AgentStatus enum 或 string
+                s = status_val.value if hasattr(status_val, 'value') else str(status_val)
+                online = s == "active"
+
+            profile = AgentProfile(
+                agent_id=agent.agent_id,
+                name=getattr(agent, 'display_name', None) or agent.agent_id,
+                description=getattr(agent, 'bio', '') or '',
+                specialties=["trading"],
+                reputation=getattr(agent, 'reputation_score', 0.5),
+                total_trades=getattr(agent, 'total_trades', 0),
+                win_rate=0.0,  # Redis 不存 win_rate，用默认值
+                online=online,
+            )
+            self.agents[agent.agent_id] = profile
+            self.inboxes[agent.agent_id] = []
+            restored += 1
+        return restored
     
     def update_stats(self, agent_id: str, trades: int = 0, wins: int = 0):
         """更新 Agent 统计"""
@@ -189,39 +337,73 @@ class AgentCommunicator:
         min_reputation: float = None,
         min_trades: int = None,
         online_only: bool = True,
-    ) -> List[AgentProfile]:
-        """发现 Agent"""
+        # --- 增强参数 ---
+        min_win_rate: float = None,
+        max_risk_score: float = None,
+        asset: str = None,
+        sort_by: str = "reputation",
+        sort_order: str = "desc",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple:
+        """发现 Agent（增强版：过滤 + 排序 + 分页）
+
+        Returns:
+            (agents_page, total_count) 分页后的结果 + 总数
+        """
         results = []
-        
+
         for agent in self.agents.values():
             if online_only and not agent.online:
                 continue
             if specialty and specialty not in agent.specialties:
                 continue
-            if min_reputation and agent.reputation < min_reputation:
+            if min_reputation is not None and agent.reputation < min_reputation:
                 continue
-            if min_trades and agent.total_trades < min_trades:
+            if min_trades is not None and agent.total_trades < min_trades:
+                continue
+            if min_win_rate is not None and agent.win_rate < min_win_rate:
+                continue
+            if asset and asset.upper().replace("-PERP", "") not in [
+                s.upper().replace("-PERP", "") for s in agent.specialties
+            ]:
                 continue
             results.append(agent)
-        
-        return sorted(results, key=lambda a: a.reputation, reverse=True)
+
+        # 排序
+        sort_keys = {
+            "reputation": lambda a: a.reputation,
+            "win_rate": lambda a: a.win_rate,
+            "total_pnl": lambda a: getattr(a, "total_pnl", 0),
+            "risk_score": lambda a: getattr(a, "risk_score", 0),
+            "total_trades": lambda a: a.total_trades,
+            "created_at": lambda a: getattr(a, "last_seen", datetime.min),
+        }
+        key_fn = sort_keys.get(sort_by, sort_keys["reputation"])
+        results.sort(key=key_fn, reverse=(sort_order == "desc"))
+
+        total = len(results)
+        return results[offset:offset + limit], total
     
     async def send(self, msg: AgentMessage) -> str:
         """发送消息"""
         self.messages[msg.message_id] = msg
-        
+
         if msg.to_agent == "*":
             # 广播
             for agent_id in self.agents:
                 if agent_id != msg.from_agent:
+                    if agent_id not in self.inboxes:
+                        self.inboxes[agent_id] = []
                     self.inboxes[agent_id].append(msg)
                     await self._deliver(agent_id, msg)
         else:
-            # 点对点
-            if msg.to_agent in self.inboxes:
-                self.inboxes[msg.to_agent].append(msg)
-                await self._deliver(msg.to_agent, msg)
-        
+            # 点对点 — 兜底: 收件人不在内存中也创建 inbox，防止消息静默丢弃
+            if msg.to_agent not in self.inboxes:
+                self.inboxes[msg.to_agent] = []
+            self.inboxes[msg.to_agent].append(msg)
+            await self._deliver(msg.to_agent, msg)
+
         return msg.message_id
     
     async def _deliver(self, agent_id: str, msg: AgentMessage):

@@ -1,0 +1,42 @@
+{
+  "name": "@riverbit/openclaw-plugin",
+  "version": "1.0.0",
+  "description": "Riverbit perpetual trading tools for OpenClaw agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "openclaw": {
+    "extensions": [
+      "src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": ">=1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "SKILL.md",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/riverbit/openclaw-plugin"
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "riverbit",
+    "trading",
+    "perpetual",
+    "defi",
+    "ai-agent"
+  ]
+}

@@ -282,6 +282,82 @@ class PriceFeed:
         defaults = {"BTC": 72000, "ETH": 2500, "SOL": 100}
         return defaults.get(asset, 0)
 
+    async def get_candles(
+        self,
+        asset: str,
+        interval: str = "1h",
+        limit: int = 100,
+    ) -> List[dict]:
+        """从 Hyperliquid 获取历史 K 线数据 (OHLCV)
+
+        Args:
+            asset: 资产名 (如 "BTC", "ETH-PERP")
+            interval: K 线周期 — "1m","5m","15m","1h","4h","1d"
+            limit: 返回数量 (1-500)
+
+        Returns:
+            列表 [{timestamp, open, high, low, close, volume}, ...]
+        """
+        asset = asset.upper().replace("-PERP", "")
+        limit = max(1, min(limit, 500))
+
+        # Hyperliquid ticker mapping
+        HL_TICKER_MAP = {
+            "PEPE": ("kPEPE", 1000),
+        }
+        hl_ticker, divisor = HL_TICKER_MAP.get(asset, (asset, 1))
+
+        # Hyperliquid interval mapping
+        INTERVAL_MAP = {
+            "1m": "1m", "5m": "5m", "15m": "15m",
+            "1h": "1h", "4h": "4h", "1d": "1d",
+        }
+        hl_interval = INTERVAL_MAP.get(interval)
+        if not hl_interval:
+            raise ValueError(f"Unsupported interval: {interval}. "
+                           f"Supported: {', '.join(INTERVAL_MAP.keys())}")
+
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+
+        try:
+            # Hyperliquid candleSnapshot API
+            async with self.session.post(
+                self.sources["hyperliquid"],
+                json={
+                    "type": "candleSnapshot",
+                    "req": {
+                        "coin": hl_ticker,
+                        "interval": hl_interval,
+                        "startTime": int((datetime.now() - timedelta(
+                            minutes=limit * {"1m": 1, "5m": 5, "15m": 15,
+                                            "1h": 60, "4h": 240, "1d": 1440}[interval]
+                        )).timestamp() * 1000),
+                        "endTime": int(datetime.now().timestamp() * 1000),
+                    },
+                },
+                timeout=15,
+            ) as resp:
+                if resp.status != 200:
+                    raise ValueError(f"Hyperliquid returned status {resp.status}")
+
+                data = await resp.json()
+                candles = []
+                for c in data[-limit:]:
+                    candles.append({
+                        "timestamp": c.get("t", 0),
+                        "open": float(c.get("o", 0)) / divisor,
+                        "high": float(c.get("h", 0)) / divisor,
+                        "low": float(c.get("l", 0)) / divisor,
+                        "close": float(c.get("c", 0)) / divisor,
+                        "volume": float(c.get("v", 0)),
+                    })
+                return candles
+
+        except Exception as e:
+            logger.error(f"Candle fetch error for {asset}: {e}")
+            raise ValueError(f"Failed to fetch candles for {asset}: {str(e)}")
+
 
 # 全局价格源实例
 price_feed = PriceFeed()

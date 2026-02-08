@@ -14,6 +14,19 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# === Skill Capabilities (沙箱权限) ===
+
+ALLOWED_CAPABILITIES = {
+    "trade", "signal", "price_read", "candles_read",
+    "chat", "a2a", "portfolio_read", "discovery",
+    "vault_manage", "escrow",
+}
+HIGH_RISK_CAPABILITIES = {"vault_manage", "escrow", "trade"}
+
+def validate_skill_execution(skill_capabilities: List[str], attempted_action: str) -> bool:
+    """预留: 检查技能是否有权执行某操作"""
+    return attempted_action in skill_capabilities
+
 # Redis client
 _redis_client = None
 
@@ -47,7 +60,15 @@ class Skill:
     rating: float = 0.0
     reviews: int = 0
     is_active: bool = True
-    
+    capabilities: List[str] = field(default_factory=list)  # 沙箱权限列表
+
+    @property
+    def risk_level(self) -> str:
+        """基于 capabilities 判断风险等级"""
+        if any(c in HIGH_RISK_CAPABILITIES for c in self.capabilities):
+            return "high"
+        return "low"
+
     def to_dict(self) -> dict:
         return {
             "skill_id": self.skill_id,
@@ -62,6 +83,8 @@ class Skill:
             "rating": self.rating,
             "reviews": self.reviews,
             "is_active": self.is_active,
+            "capabilities": self.capabilities,
+            "risk_level": self.risk_level,
         }
 
 
@@ -136,6 +159,7 @@ class SkillMarketplace:
                             rating=data.get("rating", 0.0),
                             reviews=data.get("reviews", 0),
                             is_active=data.get("is_active", True),
+                            capabilities=data.get("capabilities", []),
                         )
                     if self.skills:
                         print(f"🛒 Loaded {len(self.skills)} skills from Redis")
@@ -170,10 +194,11 @@ class SkillMarketplace:
         category: str = "strategy",
         strategy_code: Optional[str] = None,
         performance: Optional[dict] = None,
+        capabilities: Optional[List[str]] = None,
     ) -> Skill:
         """发布新技能"""
         skill_id = f"skill_{uuid.uuid4().hex[:8]}"
-        
+
         skill = Skill(
             skill_id=skill_id,
             seller_id=seller_id,
@@ -183,6 +208,7 @@ class SkillMarketplace:
             category=category,
             strategy_code=strategy_code,
             performance=performance or {},
+            capabilities=capabilities or [],
         )
         
         self.skills[skill_id] = skill

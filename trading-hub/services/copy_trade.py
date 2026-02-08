@@ -239,6 +239,51 @@ class CopyTradeService:
         
         return copied_trades
     
+    async def on_close(self, leader_id: str, trade: dict, close_position_func) -> List[dict]:
+        """
+        当 leader 平仓时，自动平掉所有 followers 的对应持仓
+
+        Args:
+            leader_id: 平仓发起者
+            trade: 平仓信息 {asset, side, position_id}
+            close_position_func: 平仓函数 (follower_id, asset, side) -> result
+
+        Returns:
+            关闭的跟单持仓列表
+        """
+        followers = self.get_followers(leader_id)
+        if not followers:
+            return []
+
+        closed_trades = []
+
+        for sub in followers:
+            try:
+                result = await close_position_func(
+                    follower_id=sub.follower_id,
+                    asset=trade["asset"],
+                    side=trade["side"],
+                )
+
+                if result:
+                    closed_trades.append({
+                        "follower_id": sub.follower_id,
+                        "result": result,
+                    })
+
+                    # 更新统计
+                    sub.total_profit += result.get("pnl", 0)
+
+                    logger.info(f"🔄 Copy-closed: {leader_id} -> {sub.follower_id} ({trade['asset']})")
+
+            except Exception as e:
+                logger.warning(f"Failed to copy-close for {sub.follower_id}: {e}")
+
+        if closed_trades:
+            self._save_to_redis()
+
+        return closed_trades
+
     def get_stats(self) -> dict:
         """获取跟单统计"""
         total_subscriptions = sum(len(v) for v in self.subscriptions.values())
