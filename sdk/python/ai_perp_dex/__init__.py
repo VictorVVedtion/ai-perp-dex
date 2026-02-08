@@ -14,10 +14,12 @@ Usage:
 """
 
 from .client import TradingHub, quick_long, quick_short
+from .legacy_client import Client
+from .types import Market, TradeRequest, Quote, Position
 from .models import (
     Intent,
     Match,
-    Position,
+    Position as HubPosition,
     Signal,
     Agent,
     Balance,
@@ -44,6 +46,13 @@ from .exceptions import (
 
 __version__ = "0.1.0"
 __all__ = [
+    # Legacy Client (Trade Router era)
+    "Client",
+    "Market",
+    "TradeRequest",
+    "Quote",
+    "Position",
+    # New Client
     # Client
     "TradingHub",
     "quick_long",
@@ -51,7 +60,7 @@ __all__ = [
     # Models
     "Intent",
     "Match",
-    "Position",
+    "HubPosition",
     "Signal",
     "Agent",
     "Balance",

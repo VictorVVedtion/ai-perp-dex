@@ -77,9 +77,8 @@ class TestAgentRegistration:
             f"{BASE_URL}/agents/register",
             json={"display_name": "Second", "wallet_address": wallet}
         )
-        # May succeed with different ID or fail - depends on implementation
-        # Just ensure no crash
-        assert resp.status_code in [200, 400]
+        # Duplicate registration should be rejected explicitly
+        assert resp.status_code in [400, 409]
     
     def test_list_agents(self):
         resp = requests.get(f"{BASE_URL}/agents")

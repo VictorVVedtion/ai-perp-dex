@@ -68,6 +68,20 @@ class PerpDEXTester:
         self.results.append(TestResult(name, passed, message, duration_ms))
         status = "✅" if passed else "❌"
         print(f"  {status} {name}" + (f": {message}" if message and not passed else ""))
+
+    @staticmethod
+    def _available_balance(data: dict) -> float:
+        """兼容不同余额响应结构."""
+        if not isinstance(data, dict):
+            return 0.0
+        if isinstance(data.get("available"), (int, float)):
+            return float(data["available"])
+        if isinstance(data.get("balance"), (int, float)):
+            return float(data["balance"])
+        nested = data.get("balance")
+        if isinstance(nested, dict) and isinstance(nested.get("available"), (int, float)):
+            return float(nested["available"])
+        return 0.0
     
     # ========== 基础 API 测试 ==========
     
@@ -256,8 +270,13 @@ class PerpDEXTester:
             self._record("余额查询", False, "No agent")
             return
         
-        status, data = await self._request("GET", f"/balance/{self.agents[0].agent_id}")
-        self._record("余额查询", status == 200 and "balance" in data)
+        status, data = await self._request(
+            "GET",
+            f"/balance/{self.agents[0].agent_id}",
+            api_key=self.agents[0].api_key,
+        )
+        has_balance_fields = any(k in data for k in ("available", "total", "balance"))
+        self._record("余额查询", status == 200 and has_balance_fields)
     
     async def test_negative_deposit(self):
         """负数存款"""
@@ -400,7 +419,11 @@ class PerpDEXTester:
             self._record("持仓列表", False, "No agent")
             return
         
-        status, data = await self._request("GET", f"/positions/{self.agents[0].agent_id}")
+        status, data = await self._request(
+            "GET",
+            f"/positions/{self.agents[0].agent_id}",
+            api_key=self.agents[0].api_key,
+        )
         self._record("持仓列表", status == 200 and "positions" in data)
     
     async def test_close_position(self):
@@ -487,8 +510,12 @@ class PerpDEXTester:
             return
         
         # 获取余额
-        _, bal_before = await self._request("GET", f"/balance/{self.agents[0].agent_id}")
-        before = bal_before.get("balance", 0)
+        _, bal_before = await self._request(
+            "GET",
+            f"/balance/{self.agents[0].agent_id}",
+            api_key=self.agents[0].api_key,
+        )
+        before = self._available_balance(bal_before)
         
         # 创建 Signal
         _, prices = await self._request("GET", "/prices")
@@ -504,8 +531,12 @@ class PerpDEXTester:
         }, api_key=self.agents[0].api_key)
         
         # 检查余额
-        _, bal_after = await self._request("GET", f"/balance/{self.agents[0].agent_id}")
-        after = bal_after.get("balance", 0)
+        _, bal_after = await self._request(
+            "GET",
+            f"/balance/{self.agents[0].agent_id}",
+            api_key=self.agents[0].api_key,
+        )
+        after = self._available_balance(bal_after)
         
         self._record("Signal 押金扣除", before - after >= 50)
     

@@ -160,7 +160,7 @@ export default function IntentTerminal() {
   // Execute trade — 使用 /intents 端点（需要已登录）
   const executeTrade = async (intent: ParsedIntent): Promise<string> => {
     if (!agentId || !apiKey) {
-      return '[X] 请先登录! 前往 /join 注册 Agent';
+      return '[X] 请先登录! 前往 /connect 连接 Agent';
     }
     if (!intent.market) {
       return '[X] 请指定交易市场 (BTC, ETH, SOL)';
@@ -209,7 +209,7 @@ ${arrow} ${intent.market}
   // Get positions — 使用已登录的 agent_id
   const getPositions = async (): Promise<string> => {
     if (!agentId) {
-      return '[X] 请先登录! 前往 /join 注册 Agent';
+      return '[X] 请先登录! 前往 /connect 连接 Agent';
     }
     try {
       const response = await fetch(`${API_BASE_URL}/positions/${agentId}`, {
@@ -242,7 +242,7 @@ ${arrow} ${intent.market}
   // Close position — 使用已登录的 agent_id
   const closePosition = async (intent: ParsedIntent): Promise<string> => {
     if (!agentId || !apiKey) {
-      return '[X] 请先登录! 前往 /join 注册 Agent';
+      return '[X] 请先登录! 前往 /connect 连接 Agent';
     }
     if (!intent.market) {
       return '[X] 请指定要平仓的市场 (BTC, ETH, SOL)';
@@ -322,6 +322,14 @@ ${arrow} ${intent.market}
       output: '',
       type: 'info'
     }]);
+
+    // Handle clear locally before API parse
+    if (cmd.trim().toLowerCase() === 'clear') {
+      setHistory([{ command: '', timestamp: new Date(), output: HELP_TEXT, type: 'info' }]);
+      setIsProcessing(false);
+      setInput('');
+      return;
+    }
 
     const intent = await parseIntent(cmd);
     let output: string;

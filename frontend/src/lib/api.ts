@@ -2,6 +2,17 @@ import { API_BASE_URL, ENDPOINTS } from './config';
 import type { ApiIntent, ApiAgent, ApiSignal, ApiLeader, ApiChatMessage, ApiThought, ApiCircle, ApiCirclePost } from './types';
 
 const API = API_BASE_URL;
+const DEFAULT_TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs: number = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export interface Market { 
   symbol: string; 
@@ -47,7 +58,7 @@ export interface Signal {
 // Fetch prices and convert to Market format
 export async function getMarkets(): Promise<Market[]> {
   try {
-    const r = await fetch(`${API}/prices`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/prices`, { cache: 'no-store' });
     if (!r.ok) return [];
     const json = await r.json();
     const prices = json.prices || json;
@@ -69,7 +80,7 @@ export async function getMarkets(): Promise<Market[]> {
 // Fetch intents (trade requests)
 export async function getRequests(): Promise<TradeRequest[]> {
   try {
-    const r = await fetch(`${API}/intents`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/intents`, { cache: 'no-store' });
     if (!r.ok) return [];
     const json = await r.json();
     const intents = json.intents || json;
@@ -94,7 +105,7 @@ export async function getRequests(): Promise<TradeRequest[]> {
 // Fetch agents
 export async function getAgents(): Promise<Agent[]> {
   try {
-    const r = await fetch(`${API}/agents`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/agents`, { cache: 'no-store' });
     if (!r.ok) return [];
     const json = await r.json();
     const agents = json.agents || json;
@@ -118,26 +129,30 @@ export async function getAgents(): Promise<Agent[]> {
 // Fetch signals
 export async function getSignals(): Promise<Signal[]> {
   try {
-    const r = await fetch(`${API}/signals`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/signals`, { cache: 'no-store' });
     if (!r.ok) return [];
     const json = await r.json();
     const signals = json.signals || json;
     
     if (!Array.isArray(signals)) return [];
     
-    return signals.map((x: any) => ({
+    return signals.map((x: any) => {
+      const rawStatus = String(x.status || 'open').toLowerCase();
+      const status: 'ACTIVE' | 'SETTLED' = rawStatus === 'settled' ? 'SETTLED' : 'ACTIVE';
+      return ({
       id: x.signal_id || x.id || `sig_${Date.now()}`,
-      target: x.target || x.prediction || x.asset || 'Unknown',
+      target: String(x.target ?? x.target_value ?? x.prediction ?? x.asset ?? 'Unknown'),
       deadline: x.deadline || x.expires_at || new Date().toISOString(),
       pool: x.pool || x.stake_amount || 0,
       odds: x.odds || 1,
       caller: x.creator_id || x.caller || 'Unknown',
       category: x.category || x.signal_type || 'PRICE',
       participants: x.participants || 0,
-      status: (x.status || 'ACTIVE').toUpperCase() as 'ACTIVE' | 'SETTLED',
+      status,
       outcome: x.outcome as 'WIN' | 'LOSS' | undefined,
       winnerPayout: x.payout || x.winnerPayout
-    }));
+      });
+    });
   } catch (e) {
     console.error('getSignals error:', e);
     return [];
@@ -147,7 +162,7 @@ export async function getSignals(): Promise<Signal[]> {
 // Fetch leaderboard
 export async function getLeaderboard(): Promise<Agent[]> {
   try {
-    const r = await fetch(`${API}/leaderboard`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/leaderboard`, { cache: 'no-store' });
     if (!r.ok) return getAgents(); // Fallback to agents
     const json = await r.json();
     const leaders = json.leaderboard || json;
@@ -187,7 +202,7 @@ function getAuthHeaders(): Record<string, string> {
 
 export async function getFollowing(agentId: string): Promise<any[]> {
   try {
-    const r = await fetch(`${API}/agents/${agentId}/following`, {
+    const r = await fetchWithTimeout(`${API}/agents/${agentId}/following`, {
       cache: 'no-store',
       headers: getAuthHeaders(),
     });
@@ -202,7 +217,7 @@ export async function getFollowing(agentId: string): Promise<any[]> {
 
 export async function followAgent(agentId: string, leaderId: string, settings?: any): Promise<boolean> {
   try {
-    const r = await fetch(`${API}/agents/${agentId}/follow/${leaderId}`, {
+    const r = await fetchWithTimeout(`${API}/agents/${agentId}/follow/${leaderId}`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(settings || {}),
@@ -216,7 +231,7 @@ export async function followAgent(agentId: string, leaderId: string, settings?: 
 
 export async function unfollowAgent(agentId: string, leaderId: string): Promise<boolean> {
   try {
-    const r = await fetch(`${API}/agents/${agentId}/follow/${leaderId}`, {
+    const r = await fetchWithTimeout(`${API}/agents/${agentId}/follow/${leaderId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -248,7 +263,7 @@ export interface Skill {
 
 export async function getSkills(): Promise<Skill[]> {
   try {
-    const r = await fetch(`${API}/skills`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/skills`, { cache: 'no-store' });
     if (!r.ok) return [];
     const json = await r.json();
     const skills = json.skills || json;
@@ -279,7 +294,7 @@ export async function getSkills(): Promise<Skill[]> {
 
 export async function getSkill(id: string): Promise<Skill | null> {
   try {
-    const r = await fetch(`${API}/skills/${id}`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/skills/${id}`, { cache: 'no-store' });
     if (!r.ok) return null;
     const x = await r.json();
     
@@ -307,7 +322,7 @@ export async function getSkill(id: string): Promise<Skill | null> {
 
 export async function subscribeToSkill(agentId: string, skillId: string): Promise<boolean> {
   try {
-    const r = await fetch(`${API}/skills/${skillId}/purchase`, {
+    const r = await fetchWithTimeout(`${API}/skills/${skillId}/purchase`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ agent_id: agentId })
@@ -321,7 +336,7 @@ export async function subscribeToSkill(agentId: string, skillId: string): Promis
 
 export async function getOwnedSkills(agentId: string): Promise<Skill[]> {
   try {
-    const r = await fetch(`${API}/agents/${agentId}/skills`, { 
+    const r = await fetchWithTimeout(`${API}/agents/${agentId}/skills`, { 
       cache: 'no-store',
       headers: getAuthHeaders() 
     });
@@ -331,31 +346,76 @@ export async function getOwnedSkills(agentId: string): Promise<Skill[]> {
     
     if (!Array.isArray(skills)) return [];
 
-    return skills.map((x: any) => ({
-      id: x.skill_id || x.id,
-      name: x.name,
-      description: x.description,
-      price: x.price,
-      ownerId: x.owner_id,
-      creatorName: x.creator_name || x.owner_id || 'System',
-      type: x.type,
-      category: x.category || x.type || 'General',
-      subscribers: x.subscribers_count || 0,
-      stats: {
-        winRate: x.stats?.win_rate || 0,
-        totalReturn: x.stats?.total_return || 0,
-        sharpeRatio: x.stats?.sharpe_ratio || 0
-      }
-    }));
+    return skills.map((x: any) => {
+      // Backend returns {purchase: {...}, skill: {...}} nested structure
+      const s = x.skill || x;
+      return {
+        id: s.skill_id || s.id,
+        name: s.name,
+        description: s.description,
+        price: s.price_usdc || s.price || 0,
+        ownerId: s.seller_id || s.owner_id || 'System',
+        creatorName: s.creator_name || s.seller_id || 'System',
+        type: s.type,
+        category: s.category || s.type || 'General',
+        subscribers: s.sales_count || s.subscribers_count || 0,
+        stats: {
+          winRate: (s.performance?.win_rate ?? s.stats?.win_rate ?? 0.5) * 100,
+          totalReturn: s.performance?.total_return ?? s.stats?.total_return ?? 0,
+          sharpeRatio: s.performance?.sharpe ?? s.stats?.sharpe_ratio ?? 0,
+        },
+      };
+    });
   } catch (e) {
     console.error('getOwnedSkills error:', e);
     return [];
   }
 }
 
+export interface PublishSkillPayload {
+  name: string;
+  description: string;
+  price_usdc: number;
+  category: string;
+  strategy_code?: string;
+  performance?: { win_rate?: number; total_return?: number; sharpe?: number };
+}
+
+export async function publishSkill(payload: PublishSkillPayload): Promise<Skill | null> {
+  try {
+    const r = await fetchWithTimeout(`${API}/skills`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return null;
+    const json = await r.json();
+    const x = json.skill || json;
+    return {
+      id: x.skill_id || x.id,
+      name: x.name,
+      description: x.description,
+      price: x.price_usdc || x.price || 0,
+      ownerId: x.seller_id || x.owner_id || '',
+      creatorName: x.creator_name || x.seller_id || 'You',
+      type: x.type || 'strategy',
+      category: x.category || 'Strategy',
+      subscribers: 0,
+      stats: {
+        winRate: (x.performance?.win_rate ?? 0.5) * 100,
+        totalReturn: x.performance?.total_return ?? 0,
+        sharpeRatio: x.performance?.sharpe ?? 0,
+      },
+    };
+  } catch (e) {
+    console.error('publishSkill error:', e);
+    return null;
+  }
+}
+
 export async function purchaseSkill(agentId: string, skillId: string): Promise<boolean> {
   try {
-    const r = await fetch(`${API}/skills/${skillId}/purchase`, {
+    const r = await fetchWithTimeout(`${API}/skills/${skillId}/purchase`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ agent_id: agentId })
@@ -369,7 +429,7 @@ export async function purchaseSkill(agentId: string, skillId: string): Promise<b
 
 export async function runSkill(agentId: string, skillId: string, params?: any): Promise<any> {
   try {
-    const r = await fetch(`${API}/agents/${agentId}/skills/run`, {
+    const r = await fetchWithTimeout(`${API}/agents/${agentId}/skills/run`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ skill_id: skillId, ...params })
@@ -412,7 +472,7 @@ export interface AgentReputation {
 
 export async function getAgentReputation(agentId: string): Promise<AgentReputation | null> {
   try {
-    const r = await fetch(`${API}/agents/${agentId}/reputation`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/agents/${agentId}/reputation`, { cache: 'no-store' });
     if (!r.ok) return null;
     return await r.json();
   } catch (e) {
@@ -423,7 +483,7 @@ export async function getAgentReputation(agentId: string): Promise<AgentReputati
 
 export async function getReputationLeaderboard(limit: number = 20): Promise<any[]> {
   try {
-    const r = await fetch(`${API}/leaderboard/reputation?limit=${limit}`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${API}/leaderboard/reputation?limit=${limit}`, { cache: 'no-store' });
     if (!r.ok) return [];
     const data = await r.json();
     return data.leaderboard || [];
@@ -439,7 +499,7 @@ export async function getReputationLeaderboard(limit: number = 20): Promise<any[
 
 export async function getChatMessages(channel: string = 'public', limit: number = 50): Promise<ApiChatMessage[]> {
   try {
-    const r = await fetch(`${ENDPOINTS.chat.messages}?channel=${channel}&limit=${limit}`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${ENDPOINTS.chat.messages}?channel=${channel}&limit=${limit}`, { cache: 'no-store' });
     if (!r.ok) return [];
     const data = await r.json();
     return data.messages || [];
@@ -451,7 +511,7 @@ export async function getChatMessages(channel: string = 'public', limit: number 
 
 export async function getThoughtStream(limit: number = 20): Promise<ApiThought[]> {
   try {
-    const r = await fetch(`${ENDPOINTS.chat.thoughts}?limit=${limit}`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`${ENDPOINTS.chat.thoughts}?limit=${limit}`, { cache: 'no-store' });
     if (!r.ok) return [];
     const data = await r.json();
     return data.thoughts || [];
@@ -463,7 +523,7 @@ export async function getThoughtStream(limit: number = 20): Promise<ApiThought[]
 
 export async function sendChatMessage(content: string, messageType: string = 'thought'): Promise<boolean> {
   try {
-    const r = await fetch(ENDPOINTS.chat.send, {
+    const r = await fetchWithTimeout(ENDPOINTS.chat.send, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ content, message_type: messageType })

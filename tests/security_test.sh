@@ -185,7 +185,7 @@ status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
     -X POST "$BASE_URL/signals/fade" \
     -H "Content-Type: application/json" \
     -H "X-API-Key: $KEY1" \
-    -d "{\"signal_id\":\"fake\",\"fader_id\":\"$AGENT2\"}")
+    -d "{\"signal_id\":\"fake\",\"fader_id\":\"$AGENT2\",\"stake_amount\":10}")
 if [ "$status" = "403" ]; then
     log_result "Cannot fade as other agent" "true" "403" "$status"
 else
@@ -357,25 +357,56 @@ echo -e "\n============================================================"
 echo "4. 速率限制测试"
 echo "============================================================"
 
-# 4.1 快速发送请求测试 per-agent 限流
-echo "Testing per-agent rate limit (10 req/s)..."
-RATE_LIMITED="false"
-for i in {1..15}; do
-    status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 \
-        -X POST "$BASE_URL/intents" \
-        -H "Content-Type: application/json" \
-        -H "X-API-Key: $KEY1" \
-        -d "{\"agent_id\":\"$AGENT1\",\"intent_type\":\"long\",\"asset\":\"ETH-PERP\",\"size_usdc\":100}")
-    if [ "$status" = "429" ]; then
-        RATE_LIMITED="true"
-        echo "   Rate limited at request $i"
-        break
-    fi
-done
-if [ "$RATE_LIMITED" = "true" ]; then
-    log_result "Per-agent rate limiting works" "true" "429 after ~10 req" "Triggered"
+# 4.1 并发突发测试 per-agent 限流 (当前配置 50 req/s)
+echo "Testing per-agent rate limit (50 req/s burst)..."
+REQ_BODY="{\"agent_id\":\"$AGENT1\",\"intent_type\":\"long\",\"asset\":\"ETH-PERP\",\"size_usdc\":100}"
+export BASE_URL KEY1 REQ_BODY
+
+RATE_RESULT=$(python3 - <<'PY'
+import os
+import urllib.request
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor
+
+base = os.environ["BASE_URL"]
+key = os.environ["KEY1"]
+payload = os.environ["REQ_BODY"].encode("utf-8")
+url = f"{base}/intents"
+
+def fire():
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": key,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception:
+        return -1
+
+with ThreadPoolExecutor(max_workers=120) as ex:
+    statuses = list(ex.map(lambda _: fire(), range(180)))
+
+count_429 = sum(1 for s in statuses if s == 429)
+count_err = sum(1 for s in statuses if s == -1)
+print(f"{count_429},{count_err}")
+PY
+)
+
+RATE_429=$(echo "$RATE_RESULT" | cut -d',' -f1)
+RATE_ERR=$(echo "$RATE_RESULT" | cut -d',' -f2)
+
+if [ "$RATE_429" -gt 0 ]; then
+    log_result "Per-agent rate limiting works" "true" "429 during burst >50 req/s" "Triggered ($RATE_429 responses were 429)"
 else
-    log_result "Per-agent rate limiting works" "false" "429 after ~10 req" "Not triggered in 15 requests" "high"
+    log_result "Per-agent rate limiting works" "false" "429 during burst >50 req/s" "No 429 in 180 concurrent requests (transport errors: $RATE_ERR)" "high"
 fi
 
 # ============================================================

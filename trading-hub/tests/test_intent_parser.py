@@ -1,5 +1,13 @@
 
 import pytest
+import sys
+from pathlib import Path
+
+# Ensure tests work regardless of how pytest is invoked.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from services.intent_parser import intent_parser
 
 def test_market_parsing():

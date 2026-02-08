@@ -46,10 +46,15 @@ class Agent:
     total_volume: float = 0
     pnl: float = 0
     reputation_score: float = 0.5  # 0-1
-    
+
     # 元数据
     display_name: Optional[str] = None
     bio: Optional[str] = None
+
+    # 社交验证
+    verified: bool = False
+    verification_nonce: Optional[str] = None
+    nonce_created_at: Optional[str] = None  # ISO timestamp for nonce expiry check
     
     def to_dict(self) -> dict:
         return {
@@ -66,6 +71,8 @@ class Agent:
             "reputation_score": self.reputation_score,
             "display_name": self.display_name,
             "bio": self.bio,
+            "verified": self.verified,
+            "nonce_created_at": self.nonce_created_at,
         }
 
 @dataclass

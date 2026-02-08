@@ -15,6 +15,7 @@ from enum import Enum
 import uuid
 
 logger = logging.getLogger(__name__)
+from config.assets import SUPPORTED_ASSETS as CONFIG_SUPPORTED_ASSETS
 
 # Redis 持久化
 _redis_client = None
@@ -55,7 +56,10 @@ class Position:
     entry_price: float
     leverage: int
     created_at: datetime = field(default_factory=datetime.now)
-    
+
+    # Vault 关联 (如果是 Vault 交易)
+    vault_id: Optional[str] = None
+
     # 止盈止损
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
@@ -120,6 +124,7 @@ class Position:
         return {
             "position_id": self.position_id,
             "agent_id": self.agent_id,
+            "vault_id": self.vault_id,
             "asset": self.asset,
             "side": self.side.value,
             "direction": self.side.value,  # alias — 兼容不同 SDK 命名习惯
@@ -168,7 +173,7 @@ class PositionManager:
     """
     
     # 支持的资产白名单 — Single Source of Truth (config/assets.py)
-    from config.assets import SUPPORTED_ASSETS
+    SUPPORTED_ASSETS = CONFIG_SUPPORTED_ASSETS
     
     # 风控参数
     LIQUIDATION_WARNING_THRESHOLD = 0.5  # 亏损 50% 保证金时警告
@@ -204,6 +209,7 @@ class PositionManager:
             data = {
                 "position_id": position.position_id,
                 "agent_id": position.agent_id,
+                "vault_id": position.vault_id,
                 "asset": position.asset,
                 "side": position.side.value,
                 "size_usdc": position.size_usdc,
@@ -249,6 +255,7 @@ class PositionManager:
                 position = Position(
                     position_id=d["position_id"],
                     agent_id=d["agent_id"],
+                    vault_id=d.get("vault_id"),
                     asset=d["asset"],
                     side=PositionSide(d["side"]),
                     size_usdc=d["size_usdc"],
@@ -328,9 +335,13 @@ class PositionManager:
             
             # 更新价格
             if self.price_feed:
-                asset = pos.asset.replace("-PERP", "")
-                price = self.price_feed.get_price(asset)
-                pos.update_pnl(price)
+                # 优先读取缓存价格，未命中时异步拉取
+                price = self.price_feed.get_cached_price(pos.asset)
+                if price <= 0:
+                    latest = await self.price_feed.get_price(pos.asset)
+                    price = latest.price if latest else 0
+                if price > 0:
+                    pos.update_pnl(price)
             
             # 检查止损
             if pos.should_stop_loss():
@@ -384,6 +395,7 @@ class PositionManager:
         leverage: int = 1,
         stop_loss: float = None,
         take_profit: float = None,
+        vault_id: str = None,
     ) -> Position:
         """
         开仓
@@ -470,6 +482,7 @@ class PositionManager:
             size_usdc=size_usdc,
             entry_price=entry_price,
             leverage=leverage,
+            vault_id=vault_id,
             stop_loss=stop_loss,
             take_profit=take_profit,
         )
@@ -532,6 +545,9 @@ class PositionManager:
         margin = pos.size_usdc / pos.leverage
         balance_change = margin + pos.realized_pnl
         self.update_agent_balance(agent_id, balance_change)
+
+        # 持久化关闭状态，避免重启后恢复成开仓
+        self._save_position_to_redis(pos)
         
         return pos
     
@@ -617,6 +633,9 @@ class PositionManager:
         margin = pos.size_usdc / pos.leverage
         balance_change = margin + pos.realized_pnl
         self.update_agent_balance(agent_id, balance_change)
+
+        # 持久化关闭状态，避免重启后恢复成开仓
+        self._save_position_to_redis(pos)
         
         return pos
     

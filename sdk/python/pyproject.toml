@@ -41,12 +41,14 @@ classifiers = [
 requires-python = ">=3.9"
 dependencies = [
     "aiohttp>=3.8.0",
+    "httpx>=0.26.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-httpx>=0.36.0",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "isort>=5.12.0",

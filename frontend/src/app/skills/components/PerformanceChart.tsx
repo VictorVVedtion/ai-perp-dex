@@ -29,7 +29,7 @@ const generateChartData = (skill: Skill) => {
 };
 
 export default function PerformanceChart({ skill }: PerformanceChartProps) {
-  const chartData = useMemo(() => generateChartData(skill), [skill.id]);
+  const chartData = useMemo(() => generateChartData(skill), [skill]);
 
   return (
     <ResponsiveContainer width="100%" height="100%">

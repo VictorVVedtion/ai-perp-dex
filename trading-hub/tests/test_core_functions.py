@@ -13,10 +13,17 @@ AI Perp DEX 核心功能测试
 import requests
 import time
 import json
+import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+import pytest
 
 BASE_URL = "http://127.0.0.1:8082"
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_CORE_TESTS") != "1",
+    reason="Requires live backend at 127.0.0.1:8082. Set RUN_LIVE_CORE_TESTS=1 to run.",
+)
 
 # ANSI colors
 GREEN = "\033[92m"
@@ -29,6 +36,7 @@ BOLD = "\033[1m"
 
 @dataclass
 class TestResult:
+    __test__ = False
     name: str
     passed: bool
     message: str
@@ -36,6 +44,7 @@ class TestResult:
 
 
 class TestRunner:
+    __test__ = False
     def __init__(self):
         self.results: list[TestResult] = []
         self.agents: Dict[str, Dict] = {}  # agent_id -> {api_key, ...}
@@ -100,6 +109,11 @@ class TestRunner:
             }
             return agent_id
         return None
+
+
+@pytest.fixture
+def runner() -> TestRunner:
+    return TestRunner()
 
 
 def test_health():

@@ -12,6 +12,7 @@ import statistics
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 import random
+import uuid
 
 # 配置 - 保守参数
 API_BASE = "http://localhost:8082"
@@ -122,10 +123,11 @@ class ConservativeStressTest:
     async def register_agent(self, session: aiohttp.ClientSession, idx: int) -> Optional[AgentContext]:
         """注册 Agent"""
         start = time.perf_counter()
+        wallet = "0x" + uuid.uuid4().hex + f"{idx:08x}"
         try:
             async with self.semaphore:
                 async with session.post(f"{API_BASE}/agents/register", json={
-                    "wallet_address": f"0x{idx:040x}",
+                    "wallet_address": wallet,
                     "display_name": f"StressBot_{idx:03d}",
                 }) as resp:
                     latency = (time.perf_counter() - start) * 1000
@@ -154,6 +156,16 @@ class ConservativeStressTest:
         }, {"X-API-Key": agent.api_key})
         self.stats["intent"].add(result)
         return result
+
+    async def fund_agent(self, session: aiohttp.ClientSession, agent: AgentContext) -> bool:
+        """为 agent 充值测试余额"""
+        result = await self._request(
+            session,
+            "POST",
+            f"{API_BASE}/faucet",
+            headers={"X-API-Key": agent.api_key},
+        )
+        return result.success
     
     async def read_endpoint(self, session: aiohttp.ClientSession, endpoint: str) -> TestResult:
         """读取端点"""
@@ -214,6 +226,16 @@ class ConservativeStressTest:
             
             print(f"✓ {len(self.agents)}/{NUM_AGENTS} agents registered")
             print(f"  {json.dumps(self.stats['register'].summary())}")
+
+            # Phase 1.5: Fund agents for intent tests
+            if self.agents:
+                print(f"\nPhase 1.5: Funding {len(self.agents)} agents via faucet...")
+                funded = 0
+                for agent in self.agents:
+                    if await self.fund_agent(session, agent):
+                        funded += 1
+                    await asyncio.sleep(0.05)
+                print(f"✓ Funded {funded}/{len(self.agents)} agents")
             
             # Phase 2: Send intents (controlled concurrency)
             print(f"\nPhase 2: Sending {len(self.agents) * INTENTS_PER_AGENT} intents...")

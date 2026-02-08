@@ -3,9 +3,8 @@
 import { useParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Bot, Shield, TrendingUp, Users, Zap, Award, BarChart3, Globe, AlertCircle, Wallet, CircleDot } from 'lucide-react';
-import { getAgentReputation, AgentReputation, getAgentCircles } from '@/lib/api';
-import type { ApiCircle } from '@/lib/types';
+import { Bot, Shield, TrendingUp, Users, Zap, Award, BarChart3, Globe, AlertCircle, AlertTriangle, Pause, XCircle } from 'lucide-react';
+import { getAgentReputation, AgentReputation, followAgent, unfollowAgent, getFollowing } from '@/lib/api';
 import { API_BASE_URL } from '@/lib/config';
 import { formatPrice, formatPnl, formatUsd } from '@/lib/utils';
 
@@ -79,6 +78,147 @@ function PnLChart({ data }: { data: { date: string; pnl: number }[] }) {
   );
 }
 
+function KillSwitch({ agentId }: { agentId: string }) {
+  const [isOwner, setIsOwner] = useState(false);
+  const [actionLoading, setActionLoading] = useState('');
+  const [confirmAction, setConfirmAction] = useState<'close' | 'pause' | null>(null);
+  const [killToast, setKillToast] = useState<string | null>(null);
+
+  const showKillToast = (msg: string) => {
+    setKillToast(msg);
+    setTimeout(() => setKillToast(null), 3000);
+  };
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('perp_dex_auth');
+      if (saved) {
+        const { agentId: myId } = JSON.parse(saved);
+        setIsOwner(myId === agentId);
+      }
+    } catch {}
+  }, [agentId]);
+
+  if (!isOwner) return null;
+
+  const getHeaders = (): Record<string, string> => {
+    const saved = localStorage.getItem('perp_dex_auth');
+    if (saved) {
+      try {
+        const { apiKey } = JSON.parse(saved);
+        if (apiKey) return { 'X-API-Key': apiKey, 'Content-Type': 'application/json' };
+      } catch {}
+    }
+    return { 'Content-Type': 'application/json' };
+  };
+
+  const handleCloseAll = () => setConfirmAction('close');
+  const handlePause = () => setConfirmAction('pause');
+
+  const executeConfirmed = async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (!action) return;
+
+    setActionLoading(action);
+    try {
+      if (action === 'close') {
+        const res = await fetch(`${API_BASE_URL}/positions/${agentId}`, { cache: 'no-store' });
+        const data = await res.json();
+        const openPositions = (Array.isArray(data) ? data : data.positions || []).filter((p: any) => p.is_open);
+        for (const pos of openPositions) {
+          await fetch(`${API_BASE_URL}/positions/${pos.position_id}/close`, {
+            method: 'POST',
+            headers: getHeaders(),
+          });
+        }
+        showKillToast(`Closed ${openPositions.length} positions`);
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        await fetch(`${API_BASE_URL}/runtime/agents/${agentId}/stop`, {
+          method: 'POST',
+          headers: getHeaders(),
+        });
+        showKillToast('Agent paused successfully');
+      }
+    } catch (e) {
+      console.error(`${action} failed:`, e);
+      showKillToast(`Failed to ${action === 'close' ? 'close positions' : 'pause agent'}`);
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  return (
+    <div className="glass-card p-6 border border-rb-red/30 bg-rb-red/5">
+      <div className="flex items-center gap-2 mb-4">
+        <AlertTriangle className="w-4 h-4 text-rb-red" />
+        <h3 className="text-sm font-bold uppercase tracking-wider text-rb-red">Emergency Controls</h3>
+      </div>
+      <p className="text-xs text-rb-text-secondary mb-4">Only visible to the agent owner. Use with caution.</p>
+      <div className="flex flex-wrap gap-3">
+        <button
+          onClick={handleCloseAll}
+          disabled={!!actionLoading}
+          className="flex items-center gap-1.5 bg-rb-red/20 hover:bg-rb-red/30 text-rb-red px-4 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-50 border border-rb-red/30"
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          {actionLoading === 'close' ? 'Closing...' : 'Close All Positions'}
+        </button>
+        <button
+          onClick={handlePause}
+          disabled={!!actionLoading}
+          className="flex items-center gap-1.5 bg-rb-yellow/20 hover:bg-rb-yellow/30 text-rb-yellow px-4 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-50 border border-rb-yellow/30"
+        >
+          <Pause className="w-3.5 h-3.5" />
+          {actionLoading === 'pause' ? 'Pausing...' : 'Pause Trading'}
+        </button>
+      </div>
+
+      {/* Confirm Dialog (replaces native confirm/alert) */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-layer-1 border border-layer-3 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold mb-2 text-rb-text-main">
+              {confirmAction === 'close' ? 'Close All Positions' : 'Pause Agent'}
+            </h3>
+            <p className="text-rb-text-secondary text-sm mb-6">
+              {confirmAction === 'close'
+                ? 'Close ALL open positions? This cannot be undone.'
+                : 'Pause this agent? It will stop trading until restarted.'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="flex-1 btn-secondary-2 btn-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeConfirmed}
+                className={`flex-1 px-4 py-2 rounded-lg font-bold text-sm transition-colors ${
+                  confirmAction === 'close'
+                    ? 'bg-rb-red text-white hover:bg-rb-red/90'
+                    : 'bg-rb-yellow text-black hover:bg-rb-yellow/90'
+                }`}
+              >
+                {confirmAction === 'close' ? 'Close All' : 'Pause'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {killToast && (
+        <div className="fixed bottom-6 right-6 bg-layer-2 border border-layer-3 text-rb-text-main px-5 py-3 rounded-xl text-sm font-mono shadow-xl z-50 animate-pulse">
+          {killToast}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AgentProfilePage() {
   const params = useParams();
   const [agent, setAgent] = useState<AgentInfo | null>(null);
@@ -86,12 +226,57 @@ export default function AgentProfilePage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [risk, setRisk] = useState<RiskData | null>(null);
   const [pnlHistory, setPnlHistory] = useState<{ date: string; pnl: number }[]>([]);
-  const [agentCircles, setAgentCircles] = useState<ApiCircle[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'vault' | 'circles'>('overview');
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [profileToast, setProfileToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const showProfileToast = (msg: string) => {
+    setProfileToast(msg);
+    setTimeout(() => setProfileToast(null), 3000);
+  };
+
+  useEffect(() => {
+    // Check follow status
+    const saved = localStorage.getItem('perp_dex_auth');
+    if (saved) {
+      try {
+        const { agentId: myId } = JSON.parse(saved);
+        if (myId && myId !== params.id) {
+          getFollowing(myId).then(list => {
+            const id = params.id as string;
+            setIsFollowing(list.some((f: any) => f.leader_id === id || f.leaderId === id));
+          });
+        }
+      } catch {}
+    }
+  }, [params.id]);
+
+  const toggleFollow = async () => {
+    const saved = localStorage.getItem('perp_dex_auth');
+    if (!saved) {
+      showProfileToast('Connect your agent at /connect to follow');
+      return;
+    }
+    try {
+      const { agentId: myId } = JSON.parse(saved);
+      if (!myId) return;
+      const targetId = params.id as string;
+
+      setFollowLoading(true);
+      if (isFollowing) {
+        const ok = await unfollowAgent(myId, targetId);
+        if (ok) { setIsFollowing(false); showProfileToast('Unfollowed agent'); }
+      } else {
+        const ok = await followAgent(myId, targetId);
+        if (ok) { setIsFollowing(true); showProfileToast('Now following agent'); }
+      }
+    } catch {} finally {
+      setFollowLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -140,10 +325,6 @@ export default function AgentProfilePage() {
             setPnlHistory([{ date: new Date().toISOString(), pnl: data.realized_pnl || 0 }]);
           }
         }
-
-        // Fetch circles
-        const circles = await getAgentCircles(id);
-        setAgentCircles(circles);
 
       } catch (err) {
         console.error('Failed to fetch agent data:', err);
@@ -256,16 +437,20 @@ export default function AgentProfilePage() {
 
           <div className="flex gap-4">
             <button
-              onClick={() => setIsFollowing(!isFollowing)}
-              className={`px-8 py-3 rounded-lg font-bold text-sm transition-all border ${
+              onClick={toggleFollow}
+              disabled={followLoading}
+              className={`px-8 py-3 rounded-lg font-bold text-sm transition-all border disabled:opacity-50 ${
                 isFollowing ? 'bg-layer-3/30 text-rb-text-secondary border-layer-3' : 'bg-layer-3/50 text-rb-text-main border-layer-4 hover:bg-layer-4/50'
               }`}
             >
-              {isFollowing ? 'FOLLOWING' : 'FOLLOW AGENT'}
+              {followLoading ? 'UPDATING...' : isFollowing ? 'FOLLOWING' : 'FOLLOW AGENT'}
             </button>
-            <button className="px-8 py-3 rounded-lg font-bold text-sm bg-rb-cyan text-black hover:bg-rb-cyan/90 transition-all shadow-[0_0_20px_rgba(14,236,188,0.2)]">
+            <Link
+              href={`/copy-trade`}
+              className="px-8 py-3 rounded-lg font-bold text-sm bg-rb-cyan text-black hover:bg-rb-cyan/90 transition-all shadow-[0_0_20px_rgba(14,236,188,0.2)]"
+            >
               COPY TRADES
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -274,7 +459,7 @@ export default function AgentProfilePage() {
       {reputation && (
         <div className="grid md:grid-cols-2 gap-6">
           {/* Trading Score */}
-          <div className="glass-card p-6 border-l-4 border-l-blue-500">
+          <div className="glass-card p-6 border-l-4 border-l-rb-cyan">
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-rb-cyan" />
@@ -308,7 +493,7 @@ export default function AgentProfilePage() {
           </div>
 
           {/* Social Score */}
-          <div className="glass-card p-6 border-l-4 border-l-purple-500">
+          <div className="glass-card p-6 border-l-4 border-l-rb-cyan-light">
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
                 <Globe className="w-5 h-5 text-rb-cyan-light" />
@@ -345,7 +530,7 @@ export default function AgentProfilePage() {
           <div className="glass-card p-6 md:col-span-2 border-l-4 border-l-rb-cyan flex flex-col md:flex-row gap-8 items-center">
             <div className="flex-shrink-0 relative w-32 h-32 flex items-center justify-center">
               <svg className="w-full h-full -rotate-90">
-                <circle cx="64" cy="64" r="58" fill="transparent" stroke="currentColor" strokeWidth="8" className="text-white/5" />
+                <circle cx="64" cy="64" r="58" fill="transparent" stroke="currentColor" strokeWidth="8" className="text-layer-3" />
                 <circle
                   cx="64" cy="64" r="58" fill="transparent" stroke="currentColor" strokeWidth="8"
                   strokeDasharray={2 * Math.PI * 58}
@@ -403,146 +588,6 @@ export default function AgentProfilePage() {
         </div>
       )}
 
-      {/* Tab Navigation */}
-      <div className="flex gap-1 border-b border-layer-3">
-        {([
-          { key: 'overview', label: 'Overview', icon: BarChart3 },
-          { key: 'positions', label: 'Positions', icon: TrendingUp },
-          { key: 'vault', label: 'Vault', icon: Wallet },
-          { key: 'circles', label: 'Circles', icon: CircleDot },
-        ] as const).map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              activeTab === key
-                ? 'border-rb-cyan text-rb-cyan'
-                : 'border-transparent text-rb-text-secondary hover:text-rb-text-main'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-            {key === 'positions' && positions.length > 0 && (
-              <span className="text-[10px] bg-rb-cyan/10 text-rb-cyan px-1.5 py-0.5 rounded-full font-mono">
-                {positions.length}
-              </span>
-            )}
-            {key === 'circles' && agentCircles.length > 0 && (
-              <span className="text-[10px] bg-rb-cyan/10 text-rb-cyan px-1.5 py-0.5 rounded-full font-mono">
-                {agentCircles.length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Vault Tab */}
-      {activeTab === 'vault' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-layer-2 border border-layer-3 rounded-lg p-4">
-              <div className="text-xs text-rb-text-secondary uppercase mb-1">Balance</div>
-              <div className="text-2xl font-bold font-mono text-rb-cyan">{formatUsd(agent.balance || 0)}</div>
-            </div>
-            <div className="bg-layer-2 border border-layer-3 rounded-lg p-4">
-              <div className="text-xs text-rb-text-secondary uppercase mb-1">In Positions</div>
-              <div className="text-2xl font-bold font-mono text-rb-yellow">
-                {formatUsd(positions.reduce((sum, p) => sum + (p.size_usdc / (p.leverage || 1)), 0))}
-              </div>
-            </div>
-            <div className="bg-layer-2 border border-layer-3 rounded-lg p-4">
-              <div className="text-xs text-rb-text-secondary uppercase mb-1">Unrealized PnL</div>
-              <div className={`text-2xl font-bold font-mono ${(positions.reduce((s, p) => s + (p.unrealized_pnl || 0), 0)) >= 0 ? 'text-rb-cyan' : 'text-rb-red'}`}>
-                {formatPnl(positions.reduce((s, p) => s + (p.unrealized_pnl || 0), 0))}
-              </div>
-            </div>
-            <div className="bg-layer-2 border border-layer-3 rounded-lg p-4">
-              <div className="text-xs text-rb-text-secondary uppercase mb-1">Open Positions</div>
-              <div className="text-2xl font-bold font-mono">{positions.length}</div>
-            </div>
-          </div>
-
-          {/* Read-only positions list (no Close button) */}
-          {positions.length > 0 && (
-            <div className="bg-layer-1 border border-layer-3 rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-layer-2 text-[10px] font-mono text-rb-text-secondary uppercase">
-                      <th className="px-6 py-3">Market</th>
-                      <th className="px-6 py-3">Side</th>
-                      <th className="px-6 py-3 text-right">Size</th>
-                      <th className="px-6 py-3 text-right">Entry</th>
-                      <th className="px-6 py-3 text-right">P&L</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-layer-3">
-                    {positions.map(pos => (
-                      <tr key={pos.position_id}>
-                        <td className="px-6 py-3 font-bold text-sm">{pos.asset}</td>
-                        <td className="px-6 py-3">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                            pos.side === 'LONG' ? 'bg-rb-green/10 text-rb-green' : 'bg-rb-red/10 text-rb-red'
-                          }`}>{pos.side}</span>
-                        </td>
-                        <td className="px-6 py-3 text-right font-mono text-sm">{formatUsd(pos.size_usdc)}</td>
-                        <td className="px-6 py-3 text-right font-mono text-sm text-rb-text-secondary">{formatPrice(pos.entry_price)}</td>
-                        <td className={`px-6 py-3 text-right font-mono text-sm font-bold ${(pos.unrealized_pnl || 0) >= 0 ? 'text-rb-green' : 'text-rb-red'}`}>
-                          {formatPnl(pos.unrealized_pnl || 0)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          <div className="bg-layer-1 border border-layer-3 rounded-lg p-6 text-center">
-            <p className="text-rb-text-secondary text-sm mb-3">Want to back this agent?</p>
-            <Link
-              href="/deploy"
-              className="inline-block bg-rb-cyan hover:bg-rb-cyan/90 text-layer-0 px-6 py-2.5 rounded-lg font-bold text-sm transition-all"
-            >
-              Back this Agent
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Circles Tab */}
-      {activeTab === 'circles' && (
-        <div className="space-y-6">
-          {agentCircles.length === 0 ? (
-            <div className="bg-layer-2 border border-layer-3 rounded-lg p-12 text-center">
-              <CircleDot className="w-12 h-12 text-rb-text-placeholder mx-auto mb-4" />
-              <h3 className="text-lg font-bold mb-2">No Circles</h3>
-              <p className="text-rb-text-secondary text-sm">This agent hasn&apos;t joined any circles yet.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {agentCircles.map(circle => (
-                <Link
-                  key={circle.circle_id}
-                  href={`/circles/${circle.circle_id}`}
-                  className="bg-layer-1 border border-layer-3 hover:border-rb-cyan/30 rounded-lg p-5 transition-all group"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-bold group-hover:text-rb-cyan transition-colors">{circle.name}</h4>
-                    <span className="text-xs text-rb-text-secondary font-mono flex items-center gap-1">
-                      <Users className="w-3 h-3" /> {circle.member_count}
-                    </span>
-                  </div>
-                  <p className="text-sm text-rb-text-secondary line-clamp-2">{circle.description || 'No description'}</p>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Overview & Positions Tabs */}
-      {(activeTab === 'overview' || activeTab === 'positions') && (
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           {/* PnL Chart */}
@@ -607,6 +652,9 @@ export default function AgentProfilePage() {
         </div>
 
         <div className="space-y-8">
+          {/* Kill Switch (Owner Only) */}
+          <KillSwitch agentId={agent.agent_id} />
+
           {/* Risk Card */}
           <div className="glass-card p-8">
             <h2 className="text-sm font-bold uppercase tracking-wider text-rb-text-secondary mb-6">Risk Assessment</h2>
@@ -677,6 +725,12 @@ export default function AgentProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Profile Toast */}
+      {profileToast && (
+        <div className="fixed bottom-6 right-6 bg-layer-2 border border-layer-3 text-rb-text-main px-5 py-3 rounded-xl text-sm font-mono shadow-xl z-50 animate-pulse">
+          {profileToast}
+        </div>
       )}
     </div>
   );

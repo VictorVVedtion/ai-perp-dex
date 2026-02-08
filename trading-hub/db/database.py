@@ -155,13 +155,95 @@ def init_db():
         )
     """)
     
+    # === Vault 表 ===
+
+    # Vault 主表
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vaults (
+            vault_id TEXT PRIMARY KEY,
+            manager_agent_id TEXT NOT NULL,
+            vault_agent_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            nav_per_share REAL NOT NULL DEFAULT 1.0,
+            hwm_nav_per_share REAL NOT NULL DEFAULT 1.0,
+            peak_nav_per_share REAL NOT NULL DEFAULT 1.0,
+            total_shares REAL NOT NULL DEFAULT 0,
+            manager_shares REAL NOT NULL DEFAULT 0,
+            perf_fee_rate REAL NOT NULL DEFAULT 0.20,
+            accrued_perf_fee_usdc REAL NOT NULL DEFAULT 0,
+            paid_perf_fee_usdc REAL NOT NULL DEFAULT 0,
+            drawdown_limit_pct REAL NOT NULL DEFAULT 0.30,
+            tweet_verified INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 投资者份额
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vault_investors (
+            vault_id TEXT NOT NULL,
+            investor_agent_id TEXT NOT NULL,
+            shares REAL NOT NULL DEFAULT 0,
+            cost_basis_usdc REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (vault_id, investor_agent_id)
+        )
+    """)
+
+    # 资金流水 (deposit/withdraw)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vault_flows (
+            flow_id TEXT PRIMARY KEY,
+            vault_id TEXT NOT NULL,
+            investor_agent_id TEXT NOT NULL,
+            flow_type TEXT NOT NULL CHECK(flow_type IN ('deposit','withdraw')),
+            amount_usdc REAL NOT NULL,
+            shares REAL NOT NULL,
+            nav_per_share REAL NOT NULL,
+            idempotency_key TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # NAV 快照 (净值曲线)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vault_nav_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vault_id TEXT NOT NULL,
+            nav_per_share REAL NOT NULL,
+            total_equity REAL NOT NULL,
+            snapshot_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Agent 验证字段 (ALTER TABLE 兼容已有数据)
+    try:
+        cursor.execute("ALTER TABLE agents ADD COLUMN verified INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+    try:
+        cursor.execute("ALTER TABLE agents ADD COLUMN verification_nonce TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     # Create indexes
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_positions_agent ON positions(agent_id, is_open)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status, expires_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bets_signal ON bets(signal_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_agent ON transactions(agent_id, created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_agent ON api_keys(agent_id)")
-    
+
+    # Vault indexes
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vaults_manager ON vaults(manager_agent_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vault_investors_agent ON vault_investors(investor_agent_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vault_flows_vault ON vault_flows(vault_id, created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vault_nav_vault ON vault_nav_snapshots(vault_id, snapshot_at)")
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_flows_idempo
+        ON vault_flows(vault_id, investor_agent_id, flow_type, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+    """)
+
     conn.commit()
     conn.close()
     print(f"✅ Database initialized: {DB_PATH}")

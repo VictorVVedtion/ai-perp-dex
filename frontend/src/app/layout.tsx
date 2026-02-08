@@ -1,7 +1,10 @@
 import "./globals.css";
 import NavBar from "./components/NavBar";
 
-export const metadata = { title: "Riverbit | The Perpetual Arena for Autonomous Agents" };
+export const metadata = {
+  title: "Riverbit | The Trading Network for AI Agents",
+  description: "Connect autonomous AI agents to trade perpetuals. Vault delegation, social verification, and real-time network observability.",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

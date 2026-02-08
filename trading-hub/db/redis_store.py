@@ -156,6 +156,9 @@ class RedisStore:
             "twitter_verified": agent.twitter_verified,
             "moltbook_handle": agent.moltbook_handle,
             "bio": agent.bio,
+            "verified": agent.verified,
+            "verification_nonce": agent.verification_nonce,
+            "nonce_created_at": agent.nonce_created_at,
             "status": agent.status.value if isinstance(agent.status, AgentStatus) else agent.status,
             "reputation_score": agent.reputation_score,
             "total_trades": agent.total_trades,
@@ -170,10 +173,11 @@ class RedisStore:
         if "status" in d and isinstance(d["status"], str):
             d["status"] = AgentStatus(d["status"])
         # 移除 Agent 不支持的字段
-        valid_fields = {'agent_id', 'wallet_address', 'created_at', 'status', 
+        valid_fields = {'agent_id', 'wallet_address', 'created_at', 'status',
                        'twitter_handle', 'twitter_verified', 'moltbook_handle',
                        'total_trades', 'total_volume', 'pnl', 'reputation_score',
-                       'display_name', 'bio'}
+                       'display_name', 'bio', 'verified', 'verification_nonce',
+                       'nonce_created_at'}
         d = {k: v for k, v in d.items() if k in valid_fields}
         return Agent(**d)
     

@@ -25,7 +25,7 @@ export default function SkillModal({ skill, isOpen, onClose, onPurchase, isOwned
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-layer-1 border border-layer-3 w-full max-w-4xl rounded-lg overflow-hidden shadow-2xl relative"
+          className="bg-layer-1 border border-layer-3 w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl relative"
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
@@ -41,7 +41,7 @@ export default function SkillModal({ skill, isOpen, onClose, onPurchase, isOwned
             </div>
             <button 
               onClick={onClose}
-              className="text-rb-text-secondary hover:text-white transition-colors p-2 hover:bg-layer-4 rounded-full"
+              className="text-rb-text-secondary hover:text-rb-text-main transition-colors p-2 hover:bg-layer-2 rounded-full"
             >
               <X size={24} />
             </button>
@@ -50,7 +50,7 @@ export default function SkillModal({ skill, isOpen, onClose, onPurchase, isOwned
           <div className="grid grid-cols-1 md:grid-cols-3">
             {/* Main Content */}
             <div className="md:col-span-2 p-6 border-r border-layer-3">
-              <div className="h-[300px] mb-6 w-full bg-layer-0/50 rounded-lg border border-layer-3 p-4">
+              <div className="h-[300px] mb-6 w-full bg-layer-0/70 rounded-xl border border-layer-3 p-4">
                 <h4 className="text-sm font-medium text-rb-text-secondary mb-4">30-Day Performance Backtest</h4>
                 <div className="h-[calc(100%-2rem)]">
                   <PerformanceChart skill={skill} />
@@ -66,7 +66,7 @@ export default function SkillModal({ skill, isOpen, onClose, onPurchase, isOwned
             </div>
 
             {/* Sidebar Stats */}
-            <div className="p-6 bg-layer-2">
+            <div className="p-6 bg-layer-1/50">
               <div className="space-y-6">
                 <div>
                   <h4 className="text-sm font-medium text-rb-text-secondary mb-2">Performance Stats</h4>
@@ -94,13 +94,26 @@ export default function SkillModal({ skill, isOpen, onClose, onPurchase, isOwned
 
                 <div className="pt-6 border-t border-layer-3">
                   <div className="flex justify-between items-center mb-4">
-                    <span className="text-rb-text-secondary">Agents Using</span>
-                    <span className="text-3xl font-bold text-rb-text-main font-mono">{skill.subscribers}</span>
+                    <span className="text-rb-text-secondary">Price</span>
+                    <span className="text-3xl font-bold text-rb-text-main font-mono">{formatUsd(skill.price)}</span>
                   </div>
-
-                  <div className="text-center text-xs text-rb-text-secondary">
-                    This skill is autonomously evolved and used by agents in the Arena.
-                  </div>
+                  
+                  {isOwned ? (
+                    <button disabled className="w-full bg-layer-2 text-rb-text-secondary py-3 rounded-xl font-bold cursor-not-allowed border border-layer-3">
+                      Subscribed
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => onPurchase(skill)}
+                      disabled={processing}
+                      className="w-full btn-primary py-3 rounded-xl text-lg shadow-[0_0_20px_rgba(14,236,188,0.3)] hover:shadow-[0_0_30px_rgba(14,236,188,0.5)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {processing ? 'Processing...' : 'Subscribe Now'}
+                    </button>
+                  )}
+                  <p className="text-center text-xs text-rb-text-secondary mt-3">
+                    Includes lifetime updates and support.
+                  </p>
                 </div>
               </div>
             </div>

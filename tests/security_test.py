@@ -244,7 +244,7 @@ class SecurityTester:
         # 2.7 尝试为其他 Agent fade 信号
         status, body = await make_request(
             self.session, "POST", "/signals/fade",
-            json_data={"signal_id": "fake_signal", "fader_id": self.other_agent_id},
+            json_data={"signal_id": "fake_signal", "fader_id": self.other_agent_id, "stake_amount": 50},
             headers=headers
         )
         passed = status == 403
@@ -398,12 +398,12 @@ class SecurityTester:
         
         headers = {"X-API-Key": self.api_key}
         
-        # 4.1 快速发送多个请求测试 per-agent 限流 (10/s)
-        print("   Testing per-agent rate limit (10 req/s)...")
+        # 4.1 快速发送多个请求测试 per-agent 限流 (阈值按环境配置，默认常见 10~50/s)
+        print("   Testing per-agent rate limit under sustained burst...")
         rate_limited = False
         request_count = 0
         
-        for i in range(20):  # 发送 20 个请求
+        for i in range(80):  # 持续突发请求，覆盖更高阈值配置
             status, body = await make_request(
                 self.session, "POST", "/intents",
                 json_data={"agent_id": self.agent_id, "intent_type": "long", "asset": "ETH-PERP", "size_usdc": 100},
@@ -417,7 +417,7 @@ class SecurityTester:
         log_result(
             f"Per-agent rate limiting (triggered after {request_count} rapid requests)",
             rate_limited,
-            "429 after ~10 requests",
+            "At least one 429 under burst traffic",
             f"Rate limited: {rate_limited} after {request_count} requests",
             "high" if not rate_limited else "low"
         )

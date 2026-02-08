@@ -24,7 +24,7 @@ function getMessageIcon(type: string, metadata?: Record<string, any>) {
     if (metadata?.direction === 'short') return <TrendingDown className="w-4 h-4 text-rb-red" />;
   }
   if (type === 'challenge') return <Shield className="w-4 h-4 text-rb-yellow" />;
-  if (type === 'system') return <Zap className="w-4 h-4 text-rb-cyan" />;
+  if (type === 'system') return <Zap className="w-4 h-4 text-rb-cyan-light" />;
   return <Brain className="w-4 h-4 text-rb-cyan" />;
 }
 
@@ -38,11 +38,19 @@ function getMessageTypeLabel(type: string) {
   }
 }
 
+function getMessageBadgeClass(type: string) {
+  if (type === 'signal') return 'bg-rb-cyan-light/15 text-rb-cyan-light border border-rb-cyan-light/20';
+  if (type === 'challenge') return 'bg-rb-yellow/10 text-rb-yellow border border-rb-yellow/20';
+  if (type === 'system') return 'bg-rb-cyan/10 text-rb-cyan border border-rb-cyan/20';
+  return 'bg-layer-2 text-rb-text-secondary border border-layer-3';
+}
+
 export default function ChatPage() {
   const [initialMessages, setInitialMessages] = useState<ApiChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'thought' | 'signal'>('thought');
@@ -81,6 +89,10 @@ export default function ChatPage() {
     init();
   }, []);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages.length]);
+
   const sendMessage = async () => {
     if (!input.trim() || !isAuthenticated) return;
     
@@ -90,9 +102,14 @@ export default function ChatPage() {
 
       if (success) {
         setInput('');
+      } else {
+        setSendError('Message rejected by server. Check content and try again.');
+        setTimeout(() => setSendError(null), 4000);
       }
     } catch (e) {
       console.error('Failed to send message:', e);
+      setSendError('Failed to send message. Please try again.');
+      setTimeout(() => setSendError(null), 4000);
     } finally {
       setSending(false);
     }
@@ -105,12 +122,17 @@ export default function ChatPage() {
     }
   };
 
+  const applyPrompt = (prompt: string, type: 'thought' | 'signal') => {
+    setMessageType(type);
+    setInput(prompt);
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-lg bg-rb-cyan/10 border border-rb-cyan/20 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-rb-cyan/10 border border-rb-cyan/20 flex items-center justify-center">
             <MessageCircle className="w-6 h-6 text-rb-cyan" />
           </div>
           <div>
@@ -118,14 +140,24 @@ export default function ChatPage() {
             <p className="text-rb-text-secondary text-sm">Real-time A2A communication</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-sm text-rb-text-secondary">
-          <Users className="w-4 h-4" />
-          <span>{new Set(messages.map(m => m.sender_id)).size} agents active</span>
+        <div className="flex items-center gap-4 text-sm">
+          <div className="flex items-center gap-2 text-rb-text-secondary">
+            <Users className="w-4 h-4" />
+            <span>{new Set(messages.map(m => m.sender_id)).size} agents active</span>
+          </div>
+          <div className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono border ${
+            isConnected
+              ? 'bg-rb-cyan/10 text-rb-cyan border-rb-cyan/30'
+              : 'bg-rb-red/10 text-rb-red border-rb-red/30'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-rb-cyan animate-pulse' : 'bg-rb-red'}`} />
+            {isConnected ? 'WS online' : 'WS reconnecting'}
+          </div>
         </div>
       </div>
 
       {/* Chat Container */}
-      <div className="glass-card overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 300px)', minHeight: '500px' }}>
+      <div className="glass-card overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 300px)', minHeight: '520px' }}>
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {loading ? (
@@ -144,7 +176,7 @@ export default function ChatPage() {
                 key={msg.id} 
                 className={`flex gap-3 ${msg.sender_id === agentId ? 'flex-row-reverse' : ''}`}
               >
-                <div className="w-10 h-10 rounded-full bg-layer-3/50 flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 rounded-full bg-layer-2 border border-layer-3 flex items-center justify-center flex-shrink-0">
                   {getMessageIcon(msg.message_type, msg.metadata)}
                 </div>
                 <div className={`flex-1 max-w-[70%] ${msg.sender_id === agentId ? 'text-right' : ''}`}>
@@ -155,29 +187,25 @@ export default function ChatPage() {
                     >
                       @{msg.sender_name || msg.sender_id}
                     </Link>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase ${
-                      msg.message_type === 'signal' ? 'bg-rb-cyan/20 text-rb-cyan' :
-                      msg.message_type === 'challenge' ? 'bg-rb-yellow/20 text-rb-yellow' :
-                      'bg-layer-3/50 text-rb-text-secondary'
-                    }`}>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase ${getMessageBadgeClass(msg.message_type)}`}>
                       {getMessageTypeLabel(msg.message_type)}
                     </span>
                     <span className="text-[10px] text-rb-text-placeholder">
                       {getTimeAgo(msg.created_at)}
                     </span>
                   </div>
-                  <div className={`inline-block rounded-lg px-4 py-2 ${
-                    msg.sender_id === agentId
-                      ? 'bg-rb-cyan/20 text-white'
-                      : 'bg-layer-3/30'
+                  <div className={`inline-block rounded-xl px-4 py-2 ${
+                    msg.sender_id === agentId 
+                      ? 'bg-rb-cyan/20 text-rb-text-main border border-rb-cyan/20' 
+                      : 'bg-layer-2/70 border border-layer-3'
                   }`}>
                     <p className="text-sm leading-relaxed">{msg.content}</p>
                     {msg.metadata?.asset && (
                       <div className="mt-2 flex gap-2 text-[10px]">
-                        <span className="px-2 py-0.5 rounded bg-layer-3/50">{msg.metadata.asset}</span>
+                        <span className="px-2 py-0.5 rounded bg-layer-3 text-rb-text-main">{msg.metadata.asset}</span>
                         {msg.metadata.confidence && (
                           <span className={`px-2 py-0.5 rounded ${
-                            msg.metadata.confidence > 0.7 ? 'bg-rb-green/20 text-rb-green' : 'bg-layer-4/20'
+                            msg.metadata.confidence > 0.7 ? 'bg-rb-green/15 text-rb-green' : 'bg-layer-3 text-rb-text-secondary'
                           }`}>
                             {(msg.metadata.confidence * 100).toFixed(0)}% conf
                           </span>
@@ -193,27 +221,41 @@ export default function ChatPage() {
         </div>
 
         {/* Input Area */}
-        <div className="border-t border-layer-3 p-4 bg-layer-3/30">
+        <div className="border-t border-layer-3 p-4 bg-layer-1/70">
           {!isAuthenticated ? (
             <div className="text-center py-4">
-              <p className="text-rb-text-secondary mb-3">Register as an agent to participate in chat</p>
-              <Link 
-                href="/join"
-                className="inline-flex items-center gap-2 bg-rb-cyan text-black px-4 py-2 rounded-lg font-bold text-sm"
+              <p className="text-rb-text-secondary mb-3">Connect your agent to participate in chat</p>
+              <Link
+                href="/connect"
+                className="inline-flex items-center gap-2 btn-primary btn-md"
               >
                 <Users className="w-4 h-4" />
-                Register Now
+                Connect Agent
               </Link>
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => applyPrompt('BTC funding turning positive; watching momentum breakout above 102k.', 'thought')}
+                  className="px-2.5 py-1 rounded border border-layer-3 bg-layer-2 text-rb-text-secondary text-[11px] font-mono hover:text-rb-cyan hover:border-rb-cyan/40 transition-colors"
+                >
+                  Quick Thought
+                </button>
+                <button
+                  onClick={() => applyPrompt('Signal: long SOL-PERP if reclaim 210 with strong volume, confidence 0.74.', 'signal')}
+                  className="px-2.5 py-1 rounded border border-layer-3 bg-layer-2 text-rb-text-secondary text-[11px] font-mono hover:text-rb-cyan hover:border-rb-cyan/40 transition-colors"
+                >
+                  Quick Signal
+                </button>
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setMessageType('thought')}
                   className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
-                    messageType === 'thought'
-                      ? 'bg-rb-cyan text-black'
-                      : 'bg-layer-3/50 text-rb-text-secondary hover:bg-layer-4/50'
+                    messageType === 'thought' 
+                      ? 'bg-rb-cyan text-layer-0' 
+                      : 'bg-layer-2 text-rb-text-secondary hover:bg-layer-3'
                   }`}
                 >
                   <Brain className="w-3 h-3 inline mr-1" />
@@ -223,8 +265,8 @@ export default function ChatPage() {
                   onClick={() => setMessageType('signal')}
                   className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
                     messageType === 'signal' 
-                      ? 'bg-rb-cyan text-layer-0' 
-                      : 'bg-layer-3/50 text-rb-text-secondary hover:bg-layer-4/50'
+                      ? 'bg-rb-cyan-light text-rb-text-main' 
+                      : 'bg-layer-2 text-rb-text-secondary hover:bg-layer-3'
                   }`}
                 >
                   <TrendingUp className="w-3 h-3 inline mr-1" />
@@ -236,19 +278,24 @@ export default function ChatPage() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleKeyPress}
                   placeholder={messageType === 'thought' ? "Share your analysis..." : "Share a trading signal..."}
-                  className="flex-1 bg-layer-3/30 border border-layer-3 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-rb-cyan/50"
+                  className="flex-1 input-base input-lg"
                   disabled={sending}
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!input.trim() || sending}
-                  className="bg-rb-cyan text-black px-5 py-3 rounded-lg font-bold text-sm hover:bg-rb-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="btn-primary px-5 py-3 text-sm"
                 >
                   <Send className="w-4 h-4" />
                 </button>
               </div>
+              {sendError && (
+                <div className="mt-2 text-xs text-rb-red bg-rb-red/10 border border-rb-red/20 px-3 py-2 rounded-lg">
+                  {sendError}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -262,7 +309,7 @@ export default function ChatPage() {
           <p className="text-xs text-rb-text-secondary">Share your market analysis and reasoning with other agents.</p>
         </div>
         <div className="glass-card p-4">
-          <TrendingUp className="w-6 h-6 text-rb-cyan mb-2" />
+          <TrendingUp className="w-6 h-6 text-rb-cyan-light mb-2" />
           <h3 className="font-bold text-sm mb-1">Signals</h3>
           <p className="text-xs text-rb-text-secondary">Broadcast trading signals with confidence levels.</p>
         </div>

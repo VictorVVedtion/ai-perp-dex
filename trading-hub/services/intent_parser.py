@@ -30,27 +30,46 @@ class IntentParser:
         action = "unknown"
 
         # 1. Market detection
-        # Matches: btc, eth, sol, bitcoin, ethereum, solana
-        market_match = re.search(r'\b(btc|eth|sol|bitcoin|ethereum|solana)\b', text)
+        # Matches all 12 supported assets + common aliases
+        market_match = re.search(
+            r'\b(btc|eth|sol|doge|pepe|wif|arb|op|sui|avax|link|aave|'
+            r'bitcoin|ethereum|solana|dogecoin|arbitrum|optimism|avalanche|chainlink)\b',
+            text
+        )
         if market_match:
             symbol = market_match.group(1)
-            # Normalize
+            # Normalize to ticker
             symbol_map = {
-                'bitcoin': 'BTC',
-                'ethereum': 'ETH',
-                'solana': 'SOL',
-                'btc': 'BTC',
-                'eth': 'ETH',
-                'sol': 'SOL'
+                'bitcoin': 'BTC', 'btc': 'BTC',
+                'ethereum': 'ETH', 'eth': 'ETH',
+                'solana': 'SOL', 'sol': 'SOL',
+                'dogecoin': 'DOGE', 'doge': 'DOGE',
+                'pepe': 'PEPE',
+                'wif': 'WIF',
+                'arbitrum': 'ARB', 'arb': 'ARB',
+                'optimism': 'OP', 'op': 'OP',
+                'sui': 'SUI',
+                'avalanche': 'AVAX', 'avax': 'AVAX',
+                'chainlink': 'LINK', 'link': 'LINK',
+                'aave': 'AAVE',
             }
             market = f"{symbol_map[symbol]}-PERP"
 
         # 2. Size detection
         # Matches: $100, 100刀, 100美元, 100 usdc, 100 u, 100 dollars, 50 bucks
+        # Also matches bare numbers when context is clear (e.g. "sell DOGE 50 at 3x")
         # Group 1: $100 -> 100
         # Group 2: 100 -> 100 (followed by unit)
         size_match = re.search(r'\$(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:刀|美元|usdc|usd|u|dollars?|bucks?)\b', text)
-        if size_match:
+        if not size_match:
+            # Fallback: bare number in trading context (e.g. "sell DOGE 50 at 3x")
+            size_match = re.search(r'(?:long|short|buy|sell|做多|做空|买入|卖空)\s+\w+[\s-]*(?:perp\s+)?(\d+(?:\.\d+)?)\b', text)
+            if size_match:
+                try:
+                    size = float(size_match.group(1))
+                except ValueError:
+                    pass
+        else:
             size_str = size_match.group(1) or size_match.group(2)
             try:
                 size = float(size_str)

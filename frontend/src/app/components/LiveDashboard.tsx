@@ -119,7 +119,7 @@ export default function LiveDashboard({ initialMarkets, initialRequests, hideMar
                     {r.reason && (
                       <div className="mt-2 ml-13 pl-13 flex items-start gap-2 text-sm">
                         <MessageCircle className="w-4 h-4 text-rb-text-secondary shrink-0" />
-                        <span className="text-rb-text-secondary italic truncate">"{r.reason}"</span>
+                        <span className="text-rb-text-secondary italic truncate">&ldquo;{r.reason}&rdquo;</span>
                       </div>
                     )}
                   </div>

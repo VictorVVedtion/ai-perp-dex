@@ -61,7 +61,7 @@ fi
 # 5. 查看持仓
 echo ""
 echo "📋 查看持仓..."
-POSITIONS=$(curl -s "$BASE_URL/positions/$AGENT_ID")
+POSITIONS=$(curl -s "$BASE_URL/positions/$AGENT_ID" -H "X-API-Key: $API_KEY")
 POS_COUNT=$(echo "$POSITIONS" | python3 -c "import sys,json; print(len([p for p in json.load(sys.stdin).get('positions',[]) if p.get('is_open')]))" 2>/dev/null)
 echo "   持仓数: $POS_COUNT"
 
@@ -92,7 +92,7 @@ fi
 # 8. 最终余额
 echo ""
 echo "💰 最终余额..."
-FINAL_BAL=$(curl -s "$BASE_URL/balance/$AGENT_ID" | python3 -c "import sys,json; print(json.load(sys.stdin).get('balance',0))" 2>/dev/null)
+FINAL_BAL=$(curl -s "$BASE_URL/balance/$AGENT_ID" -H "X-API-Key: $API_KEY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('balance',0))" 2>/dev/null)
 echo "   余额: \$$FINAL_BAL"
 
 echo ""

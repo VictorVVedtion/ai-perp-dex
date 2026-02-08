@@ -7,12 +7,12 @@ interface SkillFiltersProps {
   setSelectedCategory: (category: string) => void;
 }
 
+// Aligned with backend categories: strategy, signal, indicator
 const CATEGORIES = [
-  'All',
-  'Trend-Following',
-  'Mean-Reversion',
-  'Momentum',
-  'Arbitrage'
+  { value: '', label: 'All' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'signal', label: 'Signal' },
+  { value: 'indicator', label: 'Indicator' },
 ];
 
 export default function SkillFilters({ searchQuery, setSearchQuery, selectedCategory, setSelectedCategory }: SkillFiltersProps) {
@@ -26,23 +26,23 @@ export default function SkillFilters({ searchQuery, setSearchQuery, selectedCate
           placeholder="Search skills, creators, or strategies..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-layer-1 border border-layer-3 rounded-lg pl-10 pr-4 py-2.5 text-white placeholder:text-rb-text-placeholder focus:outline-none focus:border-rb-cyan focus:ring-1 focus:ring-rb-cyan transition-all"
+          className="w-full input-base input-md pl-10"
         />
       </div>
 
       {/* Categories */}
       <div className="flex flex-wrap gap-2">
-        {CATEGORIES.map(category => (
+        {CATEGORIES.map(({ value, label }) => (
           <button
-            key={category}
-            onClick={() => setSelectedCategory(category === 'All' ? '' : category)}
+            key={label}
+            onClick={() => setSelectedCategory(value)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              (category === 'All' && selectedCategory === '') || category === selectedCategory
-                ? 'bg-rb-cyan text-black shadow-[0_0_10px_rgba(0,212,170,0.3)]'
-                : 'bg-layer-1 border border-layer-3 text-rb-text-secondary hover:text-white hover:border-layer-4'
+              selectedCategory === value
+                ? 'bg-rb-cyan text-layer-0 shadow-[0_0_10px_rgba(14,236,188,0.3)]'
+                : 'bg-layer-1 border border-layer-3 text-rb-text-secondary hover:text-rb-text-main hover:border-layer-4'
             }`}
           >
-            {category}
+            {label}
           </button>
         ))}
       </div>

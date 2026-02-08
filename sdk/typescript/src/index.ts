@@ -602,12 +602,8 @@ export class TradingHub {
       routing,
       match,
       position,
-      get isMatched() {
-        return this.match !== undefined;
-      },
-      get wasInternal() {
-        return this.routing.internalFilled > 0;
-      },
+      isMatched: match !== undefined,
+      wasInternal: routing.internalFilled > 0,
     };
   }
 
@@ -760,7 +756,7 @@ export class TradingHub {
   }
 
   async getLeaderboard(limit: number = 20): Promise<Agent[]> {
-    const result = await this.request<any>('GET', '/leaderboard', undefined);
+    const result = await this.request<any>('GET', '/leaderboard', { limit });
     return (result.leaderboard || []).map((a: any) => ({
       agentId: a.agent_id,
       walletAddress: a.wallet_address,

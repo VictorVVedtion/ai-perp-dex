@@ -64,7 +64,7 @@ export default function TerminalPage() {
       <div className="max-w-2xl mx-auto p-8 rounded-lg bg-rb-cyan/5 border border-rb-cyan/10 text-center">
         <h3 className="text-rb-cyan font-bold mb-2">Pro Tip</h3>
         <p className="text-sm text-rb-text-secondary italic">
-          "Try saying: 'Show me my current PnL and close all positions if BTC drops below 82k' to set up autonomous safeguards."
+          &ldquo;Try saying: &apos;Show me my current PnL and close all positions if BTC drops below 82k&apos; to set up autonomous safeguards.&rdquo;
         </p>
       </div>
     </div>
