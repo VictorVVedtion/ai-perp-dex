@@ -43,6 +43,9 @@ export default function NavBar() {
             <span className="text-base tracking-tight">Riverbit</span>
             <span className="text-[9px] text-rb-text-secondary font-mono">AI TRADING NETWORK</span>
           </div>
+          <span className="ml-1 px-1.5 py-0.5 bg-rb-yellow/10 text-rb-yellow rounded text-[9px] font-bold uppercase leading-none">
+            Testnet
+          </span>
         </Link>
 
         {/* Desktop Nav */}

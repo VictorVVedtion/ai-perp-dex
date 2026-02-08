@@ -18,6 +18,7 @@ const nextConfig = {
   async redirects() {
     return [
       { source: '/join', destination: '/connect', permanent: true },
+      { source: '/deploy', destination: '/connect', permanent: true },
       { source: '/terminal', destination: '/connect', permanent: false },
     ];
   },

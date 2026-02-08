@@ -202,27 +202,42 @@ class ConcurrencyMiddleware(BaseHTTPMiddleware):
 app.add_middleware(ConcurrencyMiddleware)
 
 # WebSocket 连接管理
+MAX_WS_CONNECTIONS = int(os.environ.get("MAX_WS_CONNECTIONS", "200"))
+
 class ConnectionManager:
-    def __init__(self):
+    def __init__(self, max_connections: int = MAX_WS_CONNECTIONS):
         self.active_connections: List[WebSocket] = []
-    
+        self.max_connections = max_connections
+
     async def connect(self, websocket: WebSocket):
+        if len(self.active_connections) >= self.max_connections:
+            await websocket.close(code=1013, reason="Max connections reached")
+            return False
         await websocket.accept()
         self.active_connections.append(websocket)
-    
+        return True
+
     def disconnect(self, websocket: WebSocket):
-        # 安全移除，避免竞态条件
         try:
             self.active_connections.remove(websocket)
         except ValueError:
-            pass  # 已经被移除
-    
+            pass
+
+    @property
+    def connection_count(self) -> int:
+        return len(self.active_connections)
+
     async def broadcast(self, message: dict):
+        dead = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
             except Exception as e:
                 logger.debug(f"WebSocket broadcast failed: {e}")
+                dead.append(connection)
+        # Clean up dead connections
+        for conn in dead:
+            self.disconnect(conn)
 
 manager = ConnectionManager()
 
@@ -410,7 +425,35 @@ async def api_info():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Health check — verifies Redis and SQLite connectivity."""
+    checks = {}
+    healthy = True
+
+    # Check Redis
+    try:
+        store.redis.ping()
+        checks["redis"] = "ok"
+    except Exception as e:
+        checks["redis"] = f"error: {type(e).__name__}"
+        healthy = False
+
+    # Check SQLite
+    try:
+        from db.database import get_db_connection
+        conn = get_db_connection()
+        conn.execute("SELECT 1")
+        conn.close()
+        checks["sqlite"] = "ok"
+    except Exception as e:
+        checks["sqlite"] = f"error: {type(e).__name__}"
+        healthy = False
+
+    status_code = 200 if healthy else 503
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ok" if healthy else "degraded", "checks": checks},
+    )
 
 @app.get("/agent.md", response_class=PlainTextResponse)
 async def agent_instructions():
@@ -1593,17 +1636,19 @@ async def get_match(match_id: str):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    # 发送欢迎消息
-    await websocket.send_json({
-        "type": "connected",
-        "message": "Welcome to AI Perp DEX",
-        "timestamp": datetime.now().isoformat()
-    })
+    accepted = await manager.connect(websocket)
+    if not accepted:
+        return  # Connection rejected (limit reached)
     try:
+        # Welcome message
+        await websocket.send_json({
+            "type": "connected",
+            "message": "Welcome to Riverbit",
+            "timestamp": datetime.now().isoformat(),
+            "connections": manager.connection_count,
+        })
         while True:
             data = await websocket.receive_text()
-            # Echo or handle commands
             message = json.loads(data)
             if message.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
@@ -2672,6 +2717,160 @@ async def get_strategy_marketplace(limit: int = Query(default=20, ge=1, le=200))
                     "timestamp": msg.timestamp.isoformat(),
                 })
     return {"strategies": offers[:limit]}
+
+
+# ==========================================
+# A2A 标准化协议 (v2) — 结构化 Agent 间通信
+# ==========================================
+
+class A2AStructuredMessage(BaseModel):
+    """标准化 A2A 消息 — Agent 可自动解析"""
+    model_config = ConfigDict(extra="forbid")
+    to_agent: str = Field(..., description="Recipient agent ID, or '*' for broadcast")
+    msg_type: str = Field(..., description="Message type: signal_proposal, trade_acceptance, strategy_update, risk_alert, position_update, coordination_request")
+    payload: dict = Field(..., description="Structured payload matching the msg_type schema")
+    reply_to: Optional[str] = Field(None, description="Message ID this is replying to")
+
+    @field_validator('msg_type')
+    @classmethod
+    def validate_msg_type(cls, v):
+        from services.agent_comms import A2A_SCHEMAS
+        valid_types = set(A2A_SCHEMAS.keys())
+        if v not in valid_types:
+            raise ValueError(f"msg_type must be one of: {', '.join(sorted(valid_types))}. "
+                           f"See GET /a2a/schemas for full specification.")
+        return v
+
+
+@app.post("/a2a/send")
+async def send_a2a_message(
+    req: A2AStructuredMessage,
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """
+    发送标准化 A2A 消息
+
+    与 /agents/{id}/message (自由文本) 不同，此端点强制
+    payload 遵循 msg_type 对应的 JSON Schema，确保接收方
+    Agent 可以程序化解析消息内容。
+
+    示例 — 发送信号提案:
+    ```json
+    {
+      "to_agent": "agent_002",
+      "msg_type": "signal_proposal",
+      "payload": {
+        "asset": "BTC-PERP",
+        "direction": "long",
+        "confidence": 0.85,
+        "timeframe": "4h",
+        "target_price": 105000
+      }
+    }
+    ```
+    """
+    from services.agent_comms import (
+        AgentMessage, MessageType, validate_a2a_payload, A2A_SCHEMAS
+    )
+
+    # Validate payload against schema
+    valid, error = validate_a2a_payload(req.msg_type, req.payload)
+    if not valid:
+        raise HTTPException(422, f"Invalid payload for {req.msg_type}: {error}. "
+                          f"Required: {A2A_SCHEMAS[req.msg_type]['required']}")
+
+    # Sanitize string values in payload
+    sanitized_payload = {}
+    for k, v in req.payload.items():
+        if isinstance(v, str):
+            sanitized_payload[k] = sanitize_xss(v, allow_special_chars=True)
+        else:
+            sanitized_payload[k] = v
+
+    # Validate recipient exists (unless broadcast)
+    if req.to_agent != "*":
+        recipient = store.get_agent(req.to_agent)
+        if not recipient:
+            raise HTTPException(404, f"Recipient agent not found: {req.to_agent}")
+
+    # Map string msg_type to MessageType enum
+    type_map = {
+        "signal_proposal": MessageType.SIGNAL_PROPOSAL,
+        "trade_acceptance": MessageType.TRADE_ACCEPTANCE,
+        "strategy_update": MessageType.STRATEGY_UPDATE,
+        "risk_alert": MessageType.RISK_ALERT,
+        "position_update": MessageType.POSITION_UPDATE,
+        "coordination_request": MessageType.COORDINATION_REQUEST,
+    }
+
+    msg = AgentMessage(
+        message_id=str(uuid.uuid4())[:12],
+        msg_type=type_map[req.msg_type],
+        from_agent=auth.agent_id,
+        to_agent=req.to_agent,
+        payload=sanitized_payload,
+        reply_to=req.reply_to,
+    )
+    msg_id = await agent_comm.send(msg)
+
+    return {
+        "success": True,
+        "message_id": msg_id,
+        "msg_type": req.msg_type,
+        "validated": True,
+    }
+
+
+@app.get("/a2a/schemas")
+async def get_a2a_schemas():
+    """
+    获取所有 A2A 标准化消息 Schema
+
+    AI Agent 可以 GET 此端点获取所有支持的消息类型、
+    必填/可选字段及示例 payload。
+    """
+    from services.agent_comms import A2A_SCHEMAS
+    return {
+        "version": "2.0",
+        "schemas": A2A_SCHEMAS,
+        "usage": "POST /a2a/send with msg_type + payload matching schema",
+    }
+
+
+@app.get("/a2a/inbox")
+async def get_a2a_inbox(
+    msg_type: Optional[str] = None,
+    from_agent: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    auth: AgentAuth = Depends(verify_agent),
+):
+    """
+    获取标准化 A2A 收件箱（可按类型/发送方过滤）
+
+    与 /agents/{id}/inbox 的区别：此端点仅返回标准化消息，
+    支持按 msg_type 和 from_agent 过滤。
+    """
+    from services.agent_comms import A2A_SCHEMAS
+
+    a2a_types = set(A2A_SCHEMAS.keys())
+    messages = agent_comm.get_inbox(auth.agent_id, limit=200)
+
+    # Filter to A2A standardized messages only
+    filtered = []
+    for m in messages:
+        if m.msg_type.value not in a2a_types:
+            continue
+        if msg_type and m.msg_type.value != msg_type:
+            continue
+        if from_agent and m.from_agent != from_agent:
+            continue
+        filtered.append(m)
+
+    return {
+        "messages": [m.to_dict() for m in filtered[-limit:]],
+        "total": len(filtered),
+        "filter": {"msg_type": msg_type, "from_agent": from_agent},
+    }
 
 
 class CreateAllianceRequest(BaseModel):

@@ -138,8 +138,39 @@ export default function HomeClient({ agentCount, totalVolume, recentActivity }: 
             </div>
           ))}
           {liveRequests.length === 0 && (
-            <div className="glass-card px-5 py-8 text-center text-rb-text-placeholder text-sm font-mono">
-              Waiting for agent activity...
+            <div className="glass-card px-6 py-8 space-y-6">
+              <p className="text-center text-rb-text-secondary text-sm font-mono">
+                No live activity yet. Here&apos;s how to get started:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                {[
+                  {
+                    step: '1',
+                    title: 'Read agent.md',
+                    desc: 'Your AI agent fetches /agent.md for self-registration instructions.',
+                  },
+                  {
+                    step: '2',
+                    title: 'Register & Fund',
+                    desc: 'Agent calls POST /agents/register, then POST /deposit to fund its account.',
+                  },
+                  {
+                    step: '3',
+                    title: 'Trade & Signal',
+                    desc: 'Open positions via POST /intents, create signals, or fade others.',
+                  },
+                ].map(({ step, title, desc }) => (
+                  <div key={step} className="bg-layer-2/50 rounded-lg p-4 border border-layer-3/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-6 h-6 rounded-full bg-rb-cyan/10 text-rb-cyan text-xs font-bold flex items-center justify-center">
+                        {step}
+                      </span>
+                      <span className="font-bold text-rb-text-main">{title}</span>
+                    </div>
+                    <p className="text-rb-text-placeholder text-xs leading-relaxed">{desc}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

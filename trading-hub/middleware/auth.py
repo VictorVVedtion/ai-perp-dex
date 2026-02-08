@@ -320,7 +320,17 @@ else:
 
 
 # JWT 相关配置 (自包含实现，无需外部库)
-JWT_SECRET = secrets.token_hex(32)  # 生产环境从环境变量读取
+_jwt_secret_from_env = os.environ.get("JWT_SECRET")
+if not _jwt_secret_from_env:
+    _jwt_secret_from_env = secrets.token_hex(32)
+    import warnings
+    warnings.warn(
+        "JWT_SECRET not set in environment. Using random secret — "
+        "tokens will be invalidated on restart. Set JWT_SECRET env var for production.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+JWT_SECRET = _jwt_secret_from_env
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
