@@ -4,8 +4,13 @@
  */
 
 // API Configuration
+// API_BASE_URL: actual backend endpoint for browser API calls (localhost in dev)
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082';
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8082/ws';
+
+// Public-facing URLs for display to users/agents (production domains)
+export const PUBLIC_API_URL = process.env.NEXT_PUBLIC_PUBLIC_API_URL || 'https://api.riverbit.ai';
+export const AGENT_MD_URL = `${PUBLIC_API_URL}/agent.md`;
 
 // Feature Flags
 export const ENABLE_DEBUG_MODE = process.env.NEXT_PUBLIC_DEBUG === 'true';

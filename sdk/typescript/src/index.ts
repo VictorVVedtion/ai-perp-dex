@@ -327,7 +327,7 @@ function normalizeAsset(asset: string): string {
  * ```
  */
 export class TradingHub {
-  private static DEFAULT_API_URL = 'http://localhost:8082';
+  private static DEFAULT_API_URL = 'https://api.riverbit.ai';
   static SUPPORTED_ASSETS = ['BTC-PERP', 'ETH-PERP', 'SOL-PERP'];
 
   private apiKey?: string;

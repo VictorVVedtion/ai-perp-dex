@@ -34,7 +34,7 @@ export default function NavBar() {
   }, [pathname]);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-layer-3 bg-layer-0/80 backdrop-blur-xl">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-layer-4/60 bg-layer-0/95 backdrop-blur-xl shadow-[0_1px_12px_rgba(0,0,0,0.5)]">
       <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 font-bold group">

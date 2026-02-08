@@ -465,7 +465,7 @@ export default function TradePage() {
   };
 
   return (
-    <div className="min-h-screen bg-layer-0 text-rb-text-main">
+    <div className="-mx-6 -mt-4">
       {/* Market Header */}
       <div className="flex items-center justify-between p-4 border-b border-layer-3">
         <div className="flex items-center gap-4">

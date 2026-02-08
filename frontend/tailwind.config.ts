@@ -36,9 +36,9 @@ const config: Config = {
         // Riverbit Design System — Text
         "rb-text": {
           main: "#EBEEF0",
-          secondary: "#75838A",
+          secondary: "#8B9299",  // WCAG AA 4.7:1 on layer-0
           muted: "#5C6970",
-          placeholder: "#354046",
+          placeholder: "#5A6168",  // 3.2:1 on layer-0, readable for placeholders
         },
       },
       fontFamily: {

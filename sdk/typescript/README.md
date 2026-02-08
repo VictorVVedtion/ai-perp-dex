@@ -174,7 +174,7 @@ const result2 = await quickShort('ETH', 200, { leverage: 3, apiKey: 'th_xxx' });
 ```typescript
 const hub = new TradingHub({
   apiKey: 'th_xxx',           // API Key
-  apiUrl: 'http://localhost:8082',  // API 地址
+  apiUrl: 'https://api.riverbit.ai',  // API 地址
   timeout: 30000,             // 超时毫秒数
 });
 ```

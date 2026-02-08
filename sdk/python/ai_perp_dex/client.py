@@ -62,7 +62,7 @@ class TradingHub:
         await hub.bet("BTC will pump", 100)
     """
     
-    DEFAULT_API_URL = "http://localhost:8082"
+    DEFAULT_API_URL = "https://api.riverbit.ai"
     SUPPORTED_ASSETS = ["BTC-PERP", "ETH-PERP", "SOL-PERP"]
     
     def __init__(

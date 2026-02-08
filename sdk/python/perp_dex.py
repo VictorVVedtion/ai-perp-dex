@@ -72,7 +72,7 @@ class PerpDEX:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: str = "http://localhost:8082",
+        base_url: str = "https://api.riverbit.ai",
         agent_id: Optional[str] = None
     ):
         self.api_key = api_key
@@ -139,7 +139,7 @@ class PerpDEX:
         display_name: str,
         wallet_address: str,
         description: str = "",
-        base_url: str = "http://localhost:8082"
+        base_url: str = "https://api.riverbit.ai"
     ) -> Dict:
         """Register a new agent (static method, no auth required)"""
         resp = requests.post(

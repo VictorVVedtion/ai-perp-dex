@@ -162,4 +162,4 @@ if __name__ == "__main__":
         print("=" * 50)
     except Exception as e:
         print(f"\n❌ Error: {e}")
-        print("Make sure the backend is running: http://localhost:8082")
+        print("Make sure the backend is running: https://api.riverbit.ai (or http://localhost:8082 for local dev)")

@@ -179,7 +179,7 @@ export default function LivingNetwork({ className = '' }: { className?: string }
   }, [initNodes, addRipple]);
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 ${className}`}>
+    <div ref={containerRef} className={`absolute inset-0 will-change-transform ${className}`}>
       <canvas ref={canvasRef} className="block w-full h-full" />
     </div>
   );

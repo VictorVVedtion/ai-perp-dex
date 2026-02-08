@@ -38,7 +38,7 @@ class IntentAggregator:
     从多个平台收集 Financial Intent，转换为统一格式
     """
     
-    def __init__(self, hub_url: str = "http://localhost:8082"):
+    def __init__(self, hub_url: str = "https://api.riverbit.ai"):
         self.hub_url = hub_url
         self.session: Optional[aiohttp.ClientSession] = None
         

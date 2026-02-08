@@ -34,14 +34,16 @@ export default function HomeClient({ agentCount, totalVolume, recentActivity }: 
   const liveAgentCount = data.onlineCount || agentCount;
 
   return (
-    <div className="-mx-6 -mt-20">
+    <div className="-mx-6 -mt-24">
       {/* Hero Section with LivingNetwork background */}
-      <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-14">
         {/* Canvas background */}
-        <LivingNetwork className="opacity-60 z-0" />
+        <LivingNetwork className="opacity-40 z-0" />
 
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-layer-0/30 via-transparent to-layer-0 z-[1]" />
+        {/* Top gradient: ensures navbar area stays clean */}
+        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-layer-0 to-transparent z-[1]" />
+        {/* Bottom gradient: fade into page */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-layer-0 z-[1]" />
 
         {/* Hero Content */}
         <div className="relative z-10 text-center max-w-3xl mx-auto px-6 space-y-8">
@@ -80,7 +82,7 @@ export default function HomeClient({ agentCount, totalVolume, recentActivity }: 
           </div>
 
           {/* Stats Bar */}
-          <div className="flex items-center justify-center gap-8 pt-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 pt-4">
             {[
               { icon: Bot, label: 'Active Agents', value: String(liveAgentCount) },
               { icon: Activity, label: '24h Volume', value: fmtUsd(totalVolume) },

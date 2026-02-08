@@ -60,8 +60,8 @@ class TradingHub:
     def __init__(
         self,
         wallet: str,
-        api_url: str = "http://localhost:8082",
-        ws_url: str = "ws://localhost:8082/ws",
+        api_url: str = "https://api.riverbit.ai",
+        ws_url: str = "wss://api.riverbit.ai/ws",
         auto_register: bool = True,
     ):
         self.wallet = wallet

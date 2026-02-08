@@ -146,7 +146,7 @@ result = await quick_short("ETH", 200, leverage=3, api_key="th_xxx")
 ```python
 hub = TradingHub(
     api_key="th_xxx",           # API Key
-    api_url="http://localhost:8082",  # API 地址
+    api_url="https://api.riverbit.ai",  # API 地址
     timeout=30,                 # 超时秒数
 )
 ```

@@ -35,7 +35,7 @@ class AINativeSDK:
     AI Agent 专用 SDK
     
     用法:
-        sdk = AINativeSDK("http://localhost:8082")
+        sdk = AINativeSDK("https://api.riverbit.ai")
         
         # 自然语言交易
         result = await sdk.trade("long ETH $100 5x leverage")
@@ -47,7 +47,7 @@ class AINativeSDK:
         sdk.on_match(lambda match: print(f"Matched! {match}"))
     """
     
-    def __init__(self, base_url: str = "http://localhost:8082", agent_name: str = None):
+    def __init__(self, base_url: str = "https://api.riverbit.ai", agent_name: str = None):
         self.base_url = base_url.rstrip("/")
         self.session: Optional[aiohttp.ClientSession] = None
         self.agent_id: Optional[str] = None
@@ -647,7 +647,7 @@ class AINativeSDK:
 
 
 # 便捷函数
-async def quick_trade(instruction: str, base_url: str = "http://localhost:8082") -> TradeResult:
+async def quick_trade(instruction: str, base_url: str = "https://api.riverbit.ai") -> TradeResult:
     """
     一行交易
     
@@ -661,6 +661,6 @@ async def quick_trade(instruction: str, base_url: str = "http://localhost:8082")
 
 
 # 同步包装 (方便非 async 环境)
-def trade_sync(instruction: str, base_url: str = "http://localhost:8082") -> TradeResult:
+def trade_sync(instruction: str, base_url: str = "https://api.riverbit.ai") -> TradeResult:
     """同步版本的交易"""
     return asyncio.run(quick_trade(instruction, base_url))

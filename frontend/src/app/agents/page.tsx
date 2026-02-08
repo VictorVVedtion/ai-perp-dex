@@ -194,7 +194,7 @@ export default function AgentsPage() {
                             <RankBadge rank={i} />
                           </div>
                           <div>
-                            <div className="font-bold text-white">{agent.display_name || agent.agent_id}</div>
+                            <div className="font-bold text-rb-text-main">{agent.display_name || agent.agent_id}</div>
                             <div className="text-xs text-rb-text-secondary font-mono">{agent.agent_id}</div>
                           </div>
                         </div>

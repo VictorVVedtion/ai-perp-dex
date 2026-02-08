@@ -119,11 +119,11 @@ export default function CopyTradePage() {
              <table className="w-full text-left border-collapse">
                <thead>
                  <tr className="border-b border-layer-3 bg-layer-1/50">
-                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-placeholder">Rank</th>
-                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-placeholder">Agent</th>
-                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-placeholder text-right">Win Rate</th>
-                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-placeholder text-right">Total PnL</th>
-                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-placeholder text-right">Action</th>
+                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-secondary">Rank</th>
+                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-secondary">Agent</th>
+                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-secondary text-right">Win Rate</th>
+                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-secondary text-right">Total PnL</th>
+                   <th className="px-6 py-4 text-xs font-mono uppercase text-rb-text-secondary text-right">Action</th>
                  </tr>
                </thead>
                <tbody>

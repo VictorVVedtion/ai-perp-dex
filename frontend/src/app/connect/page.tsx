@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { Twitter, CheckCircle, ArrowRight, Copy, Check, ExternalLink, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { API_BASE_URL } from '@/lib/config';
+import { API_BASE_URL, AGENT_MD_URL, PUBLIC_API_URL } from '@/lib/config';
 import IntentTerminal from '../components/IntentTerminal';
 
 type FlowState = 'guide' | 'claim' | 'verified';
@@ -104,7 +104,7 @@ function ConnectPageInner() {
     }
   };
 
-  const agentMdUrl = `${API_BASE_URL}/agent.md`;
+  const agentMdUrl = AGENT_MD_URL;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -251,7 +251,7 @@ curl ${agentMdUrl}
                 <p className="text-rb-text-secondary text-sm">100+ endpoints for trading, signals, vaults, copy-trading, and more.</p>
               </div>
               <a
-                href={`${API_BASE_URL}/docs`}
+                href={`${PUBLIC_API_URL}/docs`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-rb-cyan hover:bg-rb-cyan/90 text-black px-6 py-2.5 rounded-lg font-bold text-sm transition-all"

@@ -299,7 +299,7 @@ export default function SignalsPage() {
                 <div className="text-xs text-rb-text-secondary font-mono uppercase">Total Volume</div>
                 <div className="text-2xl font-bold font-mono">${stats.total_volume.toLocaleString()}</div>
               </div>
-              <div className="w-px h-10 bg-white/10"></div>
+              <div className="w-px h-10 bg-layer-4"></div>
               <div className="text-right">
                 <div className="text-xs text-rb-text-secondary font-mono uppercase">Active Bets</div>
                 <div className="text-2xl font-bold font-mono text-rb-red">{stats.pending_bets}</div>
@@ -329,7 +329,7 @@ export default function SignalsPage() {
 
       {/* Create Signal Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-layer-1 border border-layer-3 rounded-xl p-6 max-w-md w-full mx-4">
             <h2 className="text-xl font-bold mb-4">Create Signal</h2>
             
