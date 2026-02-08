@@ -3,12 +3,14 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 
 # Build
 target/
 dist/
 build/
 *.egg-info/
+.next/
 
 # Environment
 .env
@@ -19,6 +21,7 @@ build/
 .idea/
 .vscode/
 *.swp
+*.swo
 
 # OS
 .DS_Store
@@ -31,13 +34,31 @@ logs/
 # Test
 .pytest_cache/
 .coverage
+htmlcov/
+TEST_REPORT.*
+TEST_SUMMARY.*
+
+# Database (local dev artifacts)
+*.db
+*.sqlite
+*.sqlite3
 
 # Credentials (NEVER commit)
 *credentials*
 *secret*
 *.pem
 *.key
+.aria_credentials
 
 # Solana
 solana-program/target/
 test-ledger/
+
+# Ralph (dev tool artifacts)
+.ralph/
+.ralphrc
+.ralph_conversion_output.*
+.ralph_conversion_prompt.*
+
+# Rust build
+api-server/target/
